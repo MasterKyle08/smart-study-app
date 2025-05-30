@@ -140,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
                         let fullText = '';
                         for (let i = 1; i <= pdf.numPages; i++) {
+                            showProcessingStatus(`Processing PDF page ${i}/${pdf.numPages}...`, true);
                             const page = await pdf.getPage(i);
                             const textContent = await page.getTextContent();
                             fullText += textContent.items.map(item => item.str).join(' ') + '\n';
@@ -158,15 +159,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Tesseract.js library is not loaded.');
             }
             try {
-                // Tesseract.js v4+ uses createWorker
-                const worker = await Tesseract.createWorker(); 
-                // You can specify language if needed: await worker.loadLanguage('eng'); await worker.initialize('eng');
+                showProcessingStatus(`Initializing OCR for ${file.name}...`, true);
+
+                // Add logger and explicit language loading/initialization
+                const worker = await Tesseract.createWorker({
+                    logger: m => {
+                        console.log('[Tesseract Logger]', m); // Log everything
+                        // Update status based on logger messages
+                        if (m.status === 'recognizing text') {
+                            const progress = (m.progress * 100).toFixed(0);
+                            showProcessingStatus(`OCR: Recognizing text ${progress}%...`, true);
+                        } else if (m.status) {
+                             showProcessingStatus(`OCR Status: ${m.status}...`, true);
+                        }
+                    }
+                });
+
+                showProcessingStatus(`Loading language model (English) for ${file.name}...`, true);
+                await worker.loadLanguage('eng');
+                await worker.initialize('eng');
+
+                showProcessingStatus(`Performing OCR on ${file.name}...`, true);
                 const { data: { text } } = await worker.recognize(file);
+                
+                showProcessingStatus(`Terminating OCR worker for ${file.name}...`, true);
                 await worker.terminate();
+                
                 return text;
+
             } catch (err) {
-                console.error("Error during OCR: ", err);
-                throw new Error('Error performing OCR on image.');
+                console.error("Error during OCR: ", err); // Log the actual Tesseract error
+                console.error("Full OCR error object:", err); // Log the full object
+
+                let errorMessage = 'Error performing OCR on image.';
+                if (err instanceof Error) {
+                    errorMessage += ` Details: ${err.message}`;
+                } else if (typeof err === 'string') {
+                    errorMessage += ` Details: ${err}`;
+                }
+                
+                throw new Error(errorMessage);
             }
         } else {
             throw new Error(`Unsupported file type: ${file.type}`);
@@ -189,20 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // For simplicity, we process one file at a time.
-        // A more advanced version could handle multiple files and combine results or process in parallel.
-        // For now, let's focus on processing the first file in the list.
-        // Or, if multiple files are allowed, the backend needs to handle an array of texts.
-        // The current backend /api/study/process expects a single extractedText.
-        // So, we'll process only the FIRST file for now.
-        // TODO: Clarify if multiple file processing (combining text) is a requirement.
-        // For now, let's assume one file processing at a time from the UI perspective for simplicity.
-        // If multiple files are selected, we can process them sequentially and display results for each,
-        // or concatenate their text. Let's concatenate for now.
-
         processButton.disabled = true;
         showProcessingStatus('Starting processing...', true);
         document.getElementById('resultsSection').classList.add('hidden'); // Hide old results
+        clearMessage('processingStatus'); // Clear previous errors before starting.
 
         let combinedText = '';
         let firstFileName = filesToProcess.length > 0 ? filesToProcess[0].name : "document";
@@ -224,16 +246,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const results = await apiProcessContent(
                 combinedText.trim(),
-                filesToProcess.length > 1 ? "Multiple Files" : firstFileName, // Use a generic name if multiple files
-                filesToProcess.length > 1 ? "application/octet-stream" : firstFileType, // Generic type if multiple
+                filesToProcess.length > 1 ? "Multiple Files" : firstFileName,
+                filesToProcess.length > 1 ? "application/octet-stream" : firstFileType,
                 outputFormats
             );
 
             displayResults(results); // ui.js function
             hideProcessingStatus();
-            // Clear files after successful processing? Or keep them for re-processing with different options?
-            // For now, let's clear them.
-            filesToProcess = [];
+            filesToProcess = []; // Clear files after successful processing
             renderFilePreviews();
 
         } catch (error) {
@@ -241,8 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const message = error.data?.message || error.message || 'An error occurred during processing.';
             showMessage('processingStatus', message, 'error');
         } finally {
-            processButton.disabled = filesToProcess.length === 0; // Re-enable based on remaining files (if not cleared)
-            if (filesToProcess.length > 0) updateProcessButtonState(); else processButton.disabled = true;
+            // Re-enable based on whether files were cleared or if new ones were added
+            updateProcessButtonState(); 
         }
     });
 

@@ -11,7 +11,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
 
 if (!JWT_SECRET) {
-  console.error("FATAL ERROR: JWT_SECRET is not defined in auth.service.js. Please set it in your .env file.");
+  console.error("FATAL ERROR: JWT_SECRET is not defined in auth.js. Please set it in your .env file.");
   process.exit(1);
 }
 

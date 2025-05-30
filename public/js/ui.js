@@ -1,6 +1,7 @@
 /**
  * @file public/js/ui.js
  * @description UI manipulation functions for the Smart Study application.
+ * Restored original renderQuiz with internal debugging and improved reset logic.
  */
 
 /**
@@ -109,44 +110,62 @@ function hideProcessingStatus() {
  * @param {Array<object>} [results.quiz] - Array of quiz objects.
  */
 function displayResults(results) {
+    console.log("Full results object received in displayResults:", JSON.stringify(results, null, 2));
+
     const resultsSection = document.getElementById('resultsSection');
     const summaryOutput = document.getElementById('summaryOutput');
     const flashcardsOutput = document.getElementById('flashcardsOutput');
     const quizOutput = document.getElementById('quizOutput');
-    const quizOutputStructured = document.getElementById('quizOutputStructured'); // For raw JSON
+    const quizOutputStructured = document.getElementById('quizOutputStructured'); 
 
-    // Hide all tabs initially then show relevant ones
-    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-    document.querySelectorAll('.tab-link').forEach(tl => tl.classList.remove('active'));
+    // --- Proactively clear all output areas and hide tabs ---
+    if (summaryOutput) summaryOutput.textContent = '';
+    if (flashcardsOutput) flashcardsOutput.innerHTML = '<p>No flashcards generated.</p>'; // Default message
+    if (quizOutput) quizOutput.innerHTML = '<p>No quiz questions generated or data is invalid.</p>'; // Default message
+    if (quizOutputStructured) quizOutputStructured.value = '';
+
+    document.querySelectorAll('.tab-content').forEach(tc => {
+        tc.classList.remove('active');
+        tc.classList.add('hidden'); // Ensure content panes are hidden initially
+    });
+    document.querySelectorAll('.tab-link').forEach(tl => {
+        tl.classList.remove('active');
+        tl.classList.add('hidden'); // Ensure tab links are hidden initially
+    });
+    // --- End proactive clearing ---
     
     let firstVisibleTab = null;
 
     if (results.summary) {
         if (summaryOutput) summaryOutput.textContent = results.summary;
         document.querySelector('[data-tab="summaryTab"]')?.classList.remove('hidden');
+        document.getElementById('summaryTab')?.classList.remove('hidden');
         if (!firstVisibleTab) firstVisibleTab = 'summaryTab';
-    } else {
-        document.querySelector('[data-tab="summaryTab"]')?.classList.add('hidden');
-        document.getElementById('summaryTab')?.classList.add('hidden');
     }
 
     if (results.flashcards && results.flashcards.length > 0) {
-        if (flashcardsOutput) renderFlashcards(flashcardsOutput, results.flashcards);
+        if (flashcardsOutput) renderFlashcards(flashcardsOutput, results.flashcards); // renderFlashcards clears its own container
         document.querySelector('[data-tab="flashcardsTab"]')?.classList.remove('hidden');
+        document.getElementById('flashcardsTab')?.classList.remove('hidden');
          if (!firstVisibleTab) firstVisibleTab = 'flashcardsTab';
-    } else {
-        document.querySelector('[data-tab="flashcardsTab"]')?.classList.add('hidden');
-        document.getElementById('flashcardsTab')?.classList.add('hidden');
     }
 
-    if (results.quiz && results.quiz.length > 0) {
-        if (quizOutput) renderQuiz(quizOutput, results.quiz);
-        if (quizOutputStructured) quizOutputStructured.value = JSON.stringify(results.quiz, null, 2);
+    if (results.quiz) { 
+        console.log("Quiz data being passed to renderQuiz:", JSON.stringify(results.quiz, null, 2));
+        // renderQuiz will handle its own clearing and display "no questions" if quiz array is empty/invalid
+        if (quizOutput) renderQuiz(quizOutput, results.quiz); 
+
+        if (quizOutputStructured && results.quiz && results.quiz.length > 0) { 
+             quizOutputStructured.value = JSON.stringify(results.quiz, null, 2);
+        }
+        // Always unhide the quiz tab link and content pane if results.quiz is present
+        // renderQuiz will handle displaying the "no questions" message if the array is empty.
         document.querySelector('[data-tab="quizTab"]')?.classList.remove('hidden');
+        document.getElementById('quizTab')?.classList.remove('hidden');
         if (!firstVisibleTab) firstVisibleTab = 'quizTab';
     } else {
-        document.querySelector('[data-tab="quizTab"]')?.classList.add('hidden');
-        document.getElementById('quizTab')?.classList.add('hidden');
+        console.log("No 'results.quiz' key found or it's undefined/null.");
+        // Quiz tab and content remain hidden (already set by proactive hiding)
     }
     
     if (firstVisibleTab) {
@@ -154,7 +173,8 @@ function displayResults(results) {
         document.querySelector(`.tab-link[data-tab="${firstVisibleTab}"]`)?.classList.add('active');
         if (resultsSection) resultsSection.classList.remove('hidden');
     } else {
-         if (resultsSection) resultsSection.classList.add('hidden'); // No results to show
+         // If no content was generated for any tab, keep the whole results section hidden
+         if (resultsSection) resultsSection.classList.add('hidden'); 
     }
 }
 
@@ -164,7 +184,8 @@ function displayResults(results) {
  * @param {Array<object>} flashcards - Array of flashcard objects {term, definition}.
  */
 function renderFlashcards(container, flashcards) {
-    container.innerHTML = ''; // Clear previous flashcards
+    console.log("renderFlashcards CALLED. Container:", container, "Flashcards data:", flashcards);
+    container.innerHTML = ''; 
     if (!flashcards || flashcards.length === 0) {
         container.innerHTML = '<p>No flashcards generated.</p>';
         return;
@@ -187,44 +208,76 @@ function renderFlashcards(container, flashcards) {
 
 /**
  * Renders quiz questions into the specified container.
+ * This is the ORIGINAL version with added internal logging.
  * @param {HTMLElement} container - The HTML element to render quiz questions into.
  * @param {Array<object>} quiz - Array of quiz objects {question, options, correctAnswer}.
  */
 function renderQuiz(container, quiz) {
-    container.innerHTML = ''; // Clear previous quiz
-    if (!quiz || quiz.length === 0) {
-        container.innerHTML = '<p>No quiz questions generated.</p>';
+    console.log("ORIGINAL renderQuiz CALLED. Container:", container, "Quiz data:", JSON.stringify(quiz, null, 2));
+    
+    if (!container) {
+        console.error("renderQuiz: CONTAINER ELEMENT NOT FOUND!");
         return;
     }
+    container.innerHTML = ''; // Clear previous quiz
+
+    if (!quiz || !Array.isArray(quiz) || quiz.length === 0) {
+        container.innerHTML = '<p>No quiz questions generated or data is invalid.</p>';
+        if (quiz && !Array.isArray(quiz)) console.error("renderQuiz: quiz data is not an array!", quiz);
+        else if (!quiz) console.log("renderQuiz: quiz data is null or undefined.");
+        else if (quiz.length === 0) console.log("renderQuiz: quiz data is an empty array.");
+        return;
+    }
+
+    console.log(`renderQuiz: Starting to render ${quiz.length} questions.`);
     quiz.forEach((q, index) => {
+        console.log(`renderQuiz: Processing question ${index + 1}:`, JSON.stringify(q, null, 2));
+
+        // Validate individual question structure
+        if (typeof q !== 'object' || q === null || 
+            typeof q.question !== 'string' || 
+            !Array.isArray(q.options) || 
+            typeof q.correctAnswer !== 'string') {
+            console.error("renderQuiz: Invalid question object structure at index", index, q);
+            const errorItem = document.createElement('p');
+            errorItem.textContent = `Error: Invalid data for question ${index + 1}. Check console for details.`;
+            errorItem.style.color = 'red';
+            container.appendChild(errorItem);
+            return; // Skip this invalid question
+        }
+
         const questionDiv = document.createElement('div');
         questionDiv.className = 'quiz-question';
+        console.log(`renderQuiz: Created questionDiv for question ${index + 1}`);
         
         const qText = document.createElement('p');
         qText.className = 'question-text';
         qText.textContent = `${index + 1}. ${q.question}`;
         questionDiv.appendChild(qText);
+        console.log(`renderQuiz: Added question text: "${q.question}"`);
         
         const optionsList = document.createElement('ul');
-        q.options.forEach(opt => {
+        console.log(`renderQuiz: Processing ${q.options.length} options for question ${index + 1}`);
+        q.options.forEach((opt, optIndex) => {
             const listItem = document.createElement('li');
-            listItem.textContent = opt;
-            if (opt === q.correctAnswer) {
-                // Optionally highlight correct answer for review, or hide for taking quiz
-                // For display purposes, we'll show it.
-            }
+            listItem.textContent = typeof opt === 'string' ? opt : JSON.stringify(opt); // Handle non-string options gracefully
             optionsList.appendChild(listItem);
+            console.log(`renderQuiz: Added option ${optIndex + 1}: "${listItem.textContent}"`);
         });
         questionDiv.appendChild(optionsList);
 
         const correctAnswerEl = document.createElement('p');
         correctAnswerEl.className = 'correct-answer';
-        correctAnswerEl.textContent = q.correctAnswer;
+        correctAnswerEl.textContent = q.correctAnswer; 
         questionDiv.appendChild(correctAnswerEl);
+        console.log(`renderQuiz: Added correct answer: "${q.correctAnswer}"`);
         
         container.appendChild(questionDiv);
+        console.log(`renderQuiz: Successfully appended question ${index + 1} to container.`);
     });
+    console.log("renderQuiz: Finished rendering all questions.");
 }
+
 
 /**
  * Sets up tab navigation.
@@ -235,36 +288,22 @@ function setupTabs(tabsContainerSelector, tabContentContainerSelector = null) {
     const tabsContainer = document.querySelector(tabsContainerSelector);
     if (!tabsContainer) return;
 
-    // If tabContentContainerSelector is not provided, assume content is sibling to tabsContainer or globally accessible by ID
     const contentContainer = tabContentContainerSelector ? document.querySelector(tabContentContainerSelector) : document;
-
 
     tabsContainer.addEventListener('click', (event) => {
         if (event.target.classList.contains('tab-link')) {
             const targetTabId = event.target.dataset.tab;
 
-            // Deactivate all tabs and content panes within this specific group
             tabsContainer.querySelectorAll('.tab-link').forEach(link => link.classList.remove('active'));
             
-            // Find content panes. If contentContainer is document, it searches globally.
-            // If specific container, it searches within that.
-            // This assumes tab content IDs match data-tab attributes.
-            const allTabContents = contentContainer.querySelectorAll('.tab-content'); // Get all potential tab contents
-            allTabContents.forEach(content => {
-                // Only hide content panes that are part of *this* tab group.
-                // This is tricky without a direct parent-child relation for content.
-                // A common pattern is that tab content elements are siblings or children of a shared parent.
-                // For simplicity, if the content ID matches any data-tab from this group, manage it.
-                // This might need refinement based on exact HTML structure.
-                // A safer way is if tab-content elements are direct children of `contentContainer`.
-                if (contentContainer === document || content.parentElement === contentContainer) {
-                     content.classList.remove('active');
-                } else if (document.getElementById(content.id)) { // Global search if not direct child
-                     document.getElementById(content.id).classList.remove('active');
-                }
+            const allTabContentsInScope = contentContainer === document ? 
+                                      document.querySelectorAll('.tab-content') : 
+                                      contentContainer.querySelectorAll('.tab-content');
+
+            allTabContentsInScope.forEach(content => {
+                 content.classList.remove('active');
             });
             
-            // Activate the clicked tab and its corresponding content pane
             event.target.classList.add('active');
             const targetContent = document.getElementById(targetTabId);
             if (targetContent) {

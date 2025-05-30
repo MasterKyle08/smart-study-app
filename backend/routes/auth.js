@@ -4,7 +4,7 @@
  */
 
 const express = require('express');
-const authService = require('../services/auth.service');
+const authService = require('../services/auth.js');
 
 const router = express.Router();
 
