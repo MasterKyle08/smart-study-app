@@ -44,6 +44,39 @@
                 <label><input type="checkbox" name="outputFormat" value="all"> All</label>
             </div>
 
+            <div id="summaryOptionsGroup" class="options-group hidden">
+                <h3>Summary Options (if summary or all is selected):</h3>
+                <div>
+                    <p>Length:</p>
+                    <label><input type="radio" name="summaryLength" value="short"> Short</label>
+                    <label><input type="radio" name="summaryLength" value="medium" checked> Medium</label>
+                    <label><input type="radio" name="summaryLength" value="long"> Long</label>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <p>Style:</p>
+                    <label><input type="radio" name="summaryStyle" value="paragraph" checked> Paragraph</label>
+                    <label><input type="radio" name="summaryStyle" value="bullets"> Bullet Points</label>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <label for="summaryKeywords">Keywords to Focus On (comma-separated, optional):</label>
+                    <input type="text" id="summaryKeywords" name="summaryKeywords" placeholder="e.g., mitosis, cell division">
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <label for="summaryAudiencePurpose">Audience/Purpose (optional):</label>
+                    <select id="summaryAudiencePurpose" name="summaryAudiencePurpose">
+                        <option value="">Default</option>
+                        <option value="quick review">For Quick Review</option>
+                        <option value="deep understanding">For Deep Understanding</option>
+                        <option value="explain to a beginner">To Explain to a Beginner</option>
+                        <option value="presentation outline">As a Presentation Outline</option>
+                    </select>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <label for="summaryNegativeKeywords">Keywords/Topics to Exclude (comma-separated, optional):</label>
+                    <input type="text" id="summaryNegativeKeywords" name="summaryNegativeKeywords" placeholder="e.g., specific dates, minor details">
+                </div>
+            </div>
+
             <button id="processButton" disabled>Process Files</button>
             <div id="processingStatus"></div>
         </section>
@@ -57,12 +90,14 @@
             </div>
 
             <div id="summaryTab" class="tab-content active">
-                <h3>Summary</h3>
+                <h3>Summary <small id="explainInstruction" class="hidden explain-instruction">(Select text in the summary to get an explanation)</small></h3>
                 <div class="actions">
+                    <button id="explainSelectedSummaryTextButton" class="utility-button hidden" title="Explain selected text">Explain Selection</button>
                     <button class="copy-button" data-target="summaryOutput">Copy Summary</button>
                     <button class="download-button" data-target="summaryOutput" data-filename="summary.txt">Download Summary</button>
                 </div>
-                <pre id="summaryOutput" class="output-box"></pre>
+                <div id="summaryOutput" class="output-box"></div>
+                <div id="explanationOutput" class="output-box hidden" style="margin-top: 1rem; border-color: #3498db;"></div>
             </div>
 
             <div id="flashcardsTab" class="tab-content">
@@ -81,7 +116,8 @@
                     <button class="download-button" data-target="quizOutputStructured" data-filename="quiz.json">Download Quiz (JSON)</button>
                 </div>
                 <div id="quizOutput" class="output-box quiz-container"></div>
-                <textarea id="quizOutputStructured" style="display:none;"></textarea> </div>
+                <textarea id="quizOutputStructured" style="display:none;"></textarea> 
+            </div>
         </section>
     </main>
 
@@ -90,14 +126,8 @@
             <span class="close-button" id="closeModalButton">&times;</span>
             <h3 id="modalTitle">Login</h3>
             <form id="authForm">
-                <div>
-                    <label for="email">Email:</label>
-                    <input type="email" id="email" name="email" required>
-                </div>
-                <div>
-                    <label for="password">Password:</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
+                <div><label for="email">Email:</label><input type="email" id="email" name="email" required></div>
+                <div><label for="password">Password:</label><input type="password" id="password" name="password" required></div>
                 <button type="submit" id="authSubmitButton">Login</button>
                 <p id="authFormMessage"></p>
                 <p id="authFormToggle">Don't have an account? <a href="#" id="toggleToRegister">Register</a></p>
@@ -106,9 +136,7 @@
     </div>
     
     <footer>
-        <div class="container">
-            <p>&copy; <span id="currentYear"></span> Smart Study AI. All rights reserved.</p>
-        </div>
+        <div class="container"><p>&copy; <span id="currentYear"></span> Smart Study AI. All rights reserved.</p></div>
     </footer>
 
     <script src="js/api.js"></script>

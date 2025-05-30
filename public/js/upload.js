@@ -8,13 +8,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('fileInput');
     const processButton = document.getElementById('processButton');
     const filePreviewContainer = document.getElementById('filePreviewContainer');
+    const summaryOptionsGroup = document.getElementById('summaryOptionsGroup');
     
-    let filesToProcess = []; // Array to hold File objects
+    let filesToProcess = []; 
 
-    if (!dropZone || !fileInput || !processButton || !filePreviewContainer) {
+    if (!dropZone || !fileInput || !processButton || !filePreviewContainer || !summaryOptionsGroup) {
         console.error('One or more essential upload UI elements are missing from the DOM.');
         return;
     }
+
+    // Toggle visibility of summary options based on whether 'summary' or 'all' is checked
+    const outputFormatCheckboxes = document.querySelectorAll('input[name="outputFormat"]');
+    function toggleSummaryOptionsVisibility() {
+        const summarySelected = document.querySelector('input[name="outputFormat"][value="summary"]').checked;
+        const allSelected = document.querySelector('input[name="outputFormat"][value="all"]').checked;
+        summaryOptionsGroup.classList.toggle('hidden', !(summarySelected || allSelected));
+    }
+    outputFormatCheckboxes.forEach(checkbox => checkbox.addEventListener('change', toggleSummaryOptionsVisibility));
+    toggleSummaryOptionsVisibility(); // Initial check
+
 
     // --- Drag and Drop ---
     dropZone.addEventListener('dragover', (event) => {
@@ -188,8 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return text;
 
             } catch (err) {
-                console.error("Error during OCR: ", err); // Log the actual Tesseract error
-                console.error("Full OCR error object:", err); // Log the full object
+                console.error("Error during OCR: ", err); 
+                console.error("Full OCR error object:", err); 
 
                 let errorMessage = 'Error performing OCR on image.';
                 if (err instanceof Error) {
@@ -221,10 +233,23 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        // Get summary preferences
+        const summaryLengthPreference = document.querySelector('input[name="summaryLength"]:checked')?.value || 'medium';
+        const summaryStylePreference = document.querySelector('input[name="summaryStyle"]:checked')?.value || 'paragraph';
+        const summaryKeywords = document.getElementById('summaryKeywords').value.trim();
+        const summaryAudiencePurpose = document.getElementById('summaryAudiencePurpose').value;
+        const summaryNegativeKeywords = document.getElementById('summaryNegativeKeywords').value.trim();
+
         processButton.disabled = true;
         showProcessingStatus('Starting processing...', true);
         document.getElementById('resultsSection').classList.add('hidden'); // Hide old results
-        clearMessage('processingStatus'); // Clear previous errors before starting.
+        clearMessage('processingStatus'); 
+        const explanationOutput = document.getElementById('explanationOutput'); // Ensure this element exists
+        if(explanationOutput) {
+             explanationOutput.classList.add('hidden'); // Hide previous explanations
+             explanationOutput.innerHTML = '';
+        }
+
 
         let combinedText = '';
         let firstFileName = filesToProcess.length > 0 ? filesToProcess[0].name : "document";
@@ -233,35 +258,44 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             for (const file of filesToProcess) {
                 const text = await extractTextFromFile(file);
-                combinedText += text + "\n\n"; // Add separator between texts from different files
+                combinedText += text + "\n\n"; 
             }
 
             if (combinedText.trim() === "") {
                 showMessage('processingStatus', 'No text could be extracted from the selected file(s).', 'error');
-                processButton.disabled = false;
+                processButton.disabled = false; // Re-enable button
                 return;
             }
             
             showProcessingStatus('Text extracted. Generating materials with AI...', true);
+            
+            // Store keywords for highlighting globally (simple approach)
+            // This allows ui.js to access them without needing to pass them through `results`
+            window.currentKeywordsForHighlighting = summaryKeywords.split(',').map(k => k.trim()).filter(k => k);
 
             const results = await apiProcessContent(
                 combinedText.trim(),
                 filesToProcess.length > 1 ? "Multiple Files" : firstFileName,
                 filesToProcess.length > 1 ? "application/octet-stream" : firstFileType,
-                outputFormats
+                outputFormats,
+                summaryLengthPreference, 
+                summaryStylePreference,
+                summaryKeywords, 
+                summaryAudiencePurpose,
+                summaryNegativeKeywords 
             );
 
-            displayResults(results); // ui.js function
+            displayResults(results); 
             hideProcessingStatus();
-            filesToProcess = []; // Clear files after successful processing
+            filesToProcess = []; 
             renderFilePreviews();
 
         } catch (error) {
             console.error('Processing error:', error);
             const message = error.data?.message || error.message || 'An error occurred during processing.';
             showMessage('processingStatus', message, 'error');
+            hideProcessingStatus(); // Ensure spinner is hidden on error too
         } finally {
-            // Re-enable based on whether files were cleared or if new ones were added
             updateProcessButtonState(); 
         }
     });

@@ -1,15 +1,12 @@
 /**
  * @file backend/services/ai.service.js
  * @description Service for interacting with Google's Generative AI (e.g., Gemma) for content generation.
- * This version uses prompt engineering for JSON output if native JSON mode is not supported by the model.
  */
 
-const fetch = require('node-fetch'); // Using node-fetch v2
+const fetch = require('node-fetch'); 
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-// IMPORTANT: Replace 'gemma-3-27b-it' with the actual model identifier you intend to use.
-// Check Google AI documentation for available Gemma models and their identifiers.
-const AI_MODEL_NAME = process.env.GOOGLE_AI_MODEL_NAME || 'gemma-3-27b-it'; // User specified this model
+const AI_MODEL_NAME = process.env.GOOGLE_AI_MODEL_NAME || 'gemma-3-27b-it'; 
 const GOOGLE_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 
@@ -20,32 +17,22 @@ if (!GOOGLE_API_KEY) {
   );
 }
 
-/**
- * Helper function to make requests to Google's Generative AI API.
- * @param {Array<object>} contents - The contents array for the generateContent request.
- * @param {object} [generationConfig={}] - Generation configuration.
- * @param {string} [modelName=AI_MODEL_NAME] - The model to use.
- * @returns {Promise<object>} The JSON response from Google AI.
- * @throws {Error} If API request fails or returns an error.
- */
 async function callGoogleAI(contents, generationConfig = {}, modelName = AI_MODEL_NAME) {
   if (!GOOGLE_API_KEY) {
     throw new Error('Google API key is not configured. Please set GOOGLE_API_KEY in your .env file.');
   }
-
   const apiUrl = `${GOOGLE_API_URL_BASE}${modelName}:generateContent?key=${GOOGLE_API_KEY}`;
-
   const payload = {
     contents: contents,
     generationConfig: {
       temperature: 0.7,
       topP: 1.0,
-      maxOutputTokens: 2048, // Default, adjust per task
-      ...generationConfig // Merge custom generationConfig
+      maxOutputTokens: 2048, // Default, can be overridden by specific generationConfig
+      ...generationConfig 
     }
   };
-
-  // Remove responseMimeType and responseSchema if they are empty or not applicable
+  // Clean up responseMimeType and responseSchema if they are null or undefined,
+  // as some models might error if these are present but empty.
   if (payload.generationConfig.responseMimeType === undefined || payload.generationConfig.responseMimeType === null) {
     delete payload.generationConfig.responseMimeType;
   }
@@ -53,18 +40,13 @@ async function callGoogleAI(contents, generationConfig = {}, modelName = AI_MODE
     delete payload.generationConfig.responseSchema;
   }
 
-
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json', },
       body: JSON.stringify(payload),
     });
-
     const data = await response.json();
-
     if (!response.ok) {
       console.error('Google AI API Error Response:', data);
       const errorMessage = data.error?.message || `Google AI API request failed with status ${response.status}`;
@@ -73,12 +55,13 @@ async function callGoogleAI(contents, generationConfig = {}, modelName = AI_MODE
       error.details = data.error;
       throw error;
     }
-    
+    // Validate the expected structure of a successful response
     if (!data.candidates || data.candidates.length === 0 || 
         !data.candidates[0].content || !data.candidates[0].content.parts || 
         data.candidates[0].content.parts.length === 0 ||
         !data.candidates[0].content.parts[0].text) {
       console.error('Google AI API - Unexpected response structure:', data);
+      // Check for safety reasons specifically if the structure is off
       if (data.candidates && data.candidates[0] && data.candidates[0].finishReason === 'SAFETY') {
         console.error('Google AI API - Content blocked due to safety ratings:', data.candidates[0].safetyRatings);
         throw new Error('Content generation blocked due to safety policies. Please revise your input.');
@@ -87,12 +70,12 @@ async function callGoogleAI(contents, generationConfig = {}, modelName = AI_MODE
         console.error('Google AI API - Prompt blocked:', data.promptFeedback.blockReason, data.promptFeedback.safetyRatings);
         throw new Error(`Prompt blocked due to ${data.promptFeedback.blockReason}. Please revise your input.`);
       }
-      throw new Error('Invalid response structure from Google AI API.');
+      throw new Error('Invalid response structure from Google AI API. Missing expected text content.');
     }
-
     return data;
   } catch (error) {
     console.error('Error calling Google AI API:', error.message);
+    // Re-throw the error so it's handled by the calling function
     throw error; 
   }
 }
@@ -100,23 +83,81 @@ async function callGoogleAI(contents, generationConfig = {}, modelName = AI_MODE
 /**
  * Generates a concise summary for the given text.
  * @param {string} text - The input text to summarize.
+ * @param {string} [lengthPreference='medium']
+ * @param {string} [stylePreference='paragraph']
+ * @param {string[]} [keywords=[]] - Keywords to focus on.
+ * @param {string} [audiencePurpose=''] - Target audience or purpose.
+ * @param {string[]} [negativeKeywords=[]] - Keywords/topics to avoid.
  * @returns {Promise<string>} The generated summary.
  */
-async function generateSummary(text) {
-  const contents = [
-    {
-      role: "user",
-      parts: [
-        { text: `You are a helpful assistant skilled in summarizing academic texts. Generate a concise summary of the provided text, focusing on key concepts and main ideas. The summary should be between 200 and 300 words. Text to summarize:\n\n${text}` }
-      ]
-    }
-  ];
-  
-  const generationConfig = {
-    maxOutputTokens: 500 // Allow more tokens for summary
-    // No responseMimeType or responseSchema needed for plain text summary
-  };
+async function generateSummary(
+    text, 
+    lengthPreference = 'medium', 
+    stylePreference = 'paragraph', 
+    keywords = [], 
+    audiencePurpose = '',
+    negativeKeywords = [] 
+) {
+  let lengthInstruction = "The summary should be concise and around 150-250 words.";
+  let maxTokens = 500; 
+  if (lengthPreference === 'short') {
+    lengthInstruction = "The summary should be very brief, around 50-100 words.";
+    maxTokens = 200;
+  } else if (lengthPreference === 'long') {
+    lengthInstruction = "The summary should be detailed, around 300-400 words.";
+    maxTokens = 800; 
+  }
 
+  let styleInstruction = "";
+  let sectionInstruction = "";
+
+  if (stylePreference === 'paragraph') {
+    styleInstruction = "Present the summary as well-structured paragraphs.";
+    if (lengthPreference === 'long') {
+      styleInstruction += " Ensure sentences flow naturally within paragraphs. Use standard paragraph separation (double newlines in the source text if generating markdown internally) only between distinct paragraphs, not after every sentence.";
+      sectionInstruction = "If the content is extensive, you may structure the paragraph-based summary with clear subheadings (e.g., using '### Subheading Title' markdown) where appropriate for readability.";
+    }
+  } else if (stylePreference === 'bullets') {
+    let bulletCountInstruction = "5-7 key bullet points";
+    if (lengthPreference === 'short') bulletCountInstruction = "3-5 key bullet points";
+    else if (lengthPreference === 'long') bulletCountInstruction = "a detailed list of 7-10 key bullet points, which can have brief explanations if necessary for clarity";
+    
+    styleInstruction = `Present the summary primarily as ${bulletCountInstruction}. Each bullet point MUST start with '*' or '-' followed by a space. Do NOT include any introductory phrases or sentences before the bullet points. Start directly with the first bullet point.`;
+    
+    if (lengthPreference === 'long') {
+      sectionInstruction = "If the content is extensive and warrants structure, you MUST organize the bullet points under relevant subheadings (e.g., '### Subheading Title' markdown). ALL content, including that under any subheadings, MUST be formatted as bullet points starting with '*' or '-'. Do not use plain paragraph sentences for any points.";
+    }
+  }
+  
+  let keywordInstruction = "";
+  if (keywords && keywords.length > 0) {
+    keywordInstruction = `Pay special attention to the following keywords and ensure they are well-represented: ${keywords.join(', ')}.`;
+  }
+
+  let audienceInstruction = "";
+  if (audiencePurpose) {
+    audienceInstruction = `Tailor this summary for the following audience or purpose: ${audiencePurpose}.`;
+  }
+
+  let negativeKeywordInstruction = "";
+  if (negativeKeywords && negativeKeywords.length > 0) {
+    negativeKeywordInstruction = `Avoid discussing or emphasizing the following topics/keywords: ${negativeKeywords.join(', ')}.`;
+  }
+
+  const prompt = `You are a helpful assistant skilled in summarizing academic texts. 
+Focus on key concepts and main ideas.
+${lengthInstruction}
+${styleInstruction}
+${keywordInstruction}
+${audienceInstruction}
+${negativeKeywordInstruction}
+${sectionInstruction} 
+Do not add any conversational filler before or after the summary content itself.
+Text to summarize:
+${text}`;
+
+  const contents = [{ role: "user", parts: [{ text: prompt }] }];
+  const generationConfig = { maxOutputTokens: maxTokens };
   const data = await callGoogleAI(contents, generationConfig);
   return data.candidates[0].content.parts[0].text.trim();
 }
@@ -129,59 +170,66 @@ async function generateSummary(text) {
  */
 function extractJsonFromString(text) {
     if (!text || typeof text !== 'string') return null;
+    
     // Look for JSON starting with ```json and ending with ```
     const markdownJsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
     if (markdownJsonMatch && markdownJsonMatch[1]) {
         return markdownJsonMatch[1].trim();
     }
-    // Look for JSON starting with ``` and ending with ```
+
+    // Look for JSON starting with ``` and ending with ``` (generic code block)
     const markdownMatch = text.match(/```\s*([\s\S]*?)\s*```/);
     if (markdownMatch && markdownMatch[1]) {
-        // Basic check if it looks like JSON
-        if ((markdownMatch[1].startsWith('{') && markdownMatch[1].endsWith('}')) || (markdownMatch[1].startsWith('[') && markdownMatch[1].endsWith(']'))) {
-            return markdownMatch[1].trim();
+        // Basic check if it looks like JSON before returning
+        const potentialJson = markdownMatch[1].trim();
+        if ((potentialJson.startsWith('{') && potentialJson.endsWith('}')) || (potentialJson.startsWith('[') && potentialJson.endsWith(']'))) {
+            return potentialJson;
         }
     }
-    // Look for the first '{' or '[' and the last '}' or ']'
-    // This is a more aggressive and potentially error-prone method.
-    const firstBracket = text.indexOf('[');
-    const firstBrace = text.indexOf('{');
-    let startIndex = -1;
 
-    if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
-        startIndex = firstBracket;
-    } else if (firstBrace !== -1) {
-        startIndex = firstBrace;
-    }
-
-    if (startIndex === -1) return null; // No JSON structure found
-
-    // Try to find the matching end bracket/brace
-    // This simplified version just takes the substring from the first opening to the last closing
-    // A proper parser would be needed for perfect matching, but this is often good enough for LLM outputs
-    const lastBracket = text.lastIndexOf(']');
-    const lastBrace = text.lastIndexOf('}');
-    let endIndex = -1;
-
-    if (startIndex === firstBracket && lastBracket !== -1) {
-        endIndex = lastBracket;
-    } else if (startIndex === firstBrace && lastBrace !== -1) {
-        endIndex = lastBrace;
-    }
-    
-    if (endIndex > startIndex) {
-        return text.substring(startIndex, endIndex + 1).trim();
-    }
-    
-    // If all else fails, return the trimmed text if it looks like JSON
+    // If no markdown blocks, try to find JSON by looking for the first '{' or '['
+    // and the corresponding last '}' or ']'. This is more aggressive.
     const trimmedText = text.trim();
-    if ((trimmedText.startsWith('{') && trimmedText.endsWith('}')) || (trimmedText.startsWith('[') && trimmedText.endsWith(']'))) {
-        return trimmedText;
+    let startIndex = -1;
+    let endIndex = -1;
+    let expectedCloser;
+
+    if (trimmedText.startsWith('{')) {
+        startIndex = 0;
+        expectedCloser = '}';
+    } else if (trimmedText.startsWith('[')) {
+        startIndex = 0;
+        expectedCloser = ']';
     }
 
-    return null;
-}
+    if (startIndex === 0) {
+        // Attempt to find the matching closing bracket/brace
+        // This simple lastIndexOf is not a robust parser but can work for well-formed LLM outputs
+        // where JSON is the main content.
+        endIndex = trimmedText.lastIndexOf(expectedCloser);
+        if (endIndex > startIndex) {
+            // Try to parse to ensure it's valid JSON
+            try {
+                JSON.parse(trimmedText.substring(startIndex, endIndex + 1));
+                return trimmedText.substring(startIndex, endIndex + 1);
+            } catch (e) {
+                // Not valid JSON, so this substring isn't what we want
+            }
+        }
+    }
+    
+    // If all else fails, and the entire trimmed text looks like JSON, return it.
+    if ((trimmedText.startsWith('{') && trimmedText.endsWith('}')) || (trimmedText.startsWith('[') && trimmedText.endsWith(']'))) {
+        try {
+            JSON.parse(trimmedText);
+            return trimmedText;
+        } catch(e) {
+            // Not valid
+        }
+    }
 
+    return null; // No clearly identifiable JSON found
+}
 
 /**
  * Generates flashcards from the given text by instructing the model to output JSON.
@@ -190,24 +238,24 @@ function extractJsonFromString(text) {
  */
 async function generateFlashcards(text) {
   const prompt = `You are a helpful assistant. Based on the provided text, generate 10-15 flashcards.
-Each flashcard should have a 'term' and a 'definition'.
+Each flashcard should have a 'term' (a concise key concept or keyword) and a 'definition' (a clear explanation of the term).
 Respond ONLY with a valid JSON array of objects in the following format, and nothing else:
 [
   {"term": "Example Term 1", "definition": "Example Definition 1"},
   {"term": "Example Term 2", "definition": "Example Definition 2"}
 ]
 
-Do NOT include any explanatory text before or after the JSON array.
-The JSON should be the only content in your response.
+Do NOT include any explanatory text, comments, or markdown formatting before or after the JSON array.
+The JSON array should be the only content in your response.
 
 Text to process:
 ${text}`;
 
   const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  
-  const generationConfig = {
+  const generationConfig = { 
     maxOutputTokens: 1500, // Allow ample tokens for JSON structure
-    // No responseMimeType or responseSchema, relying on prompt
+    // Consider temperature if creativity in term/definition is desired, but for strict JSON, lower might be better.
+    // temperature: 0.5 
   };
 
   const data = await callGoogleAI(contents, generationConfig);
@@ -219,24 +267,34 @@ ${text}`;
     if (!jsonString) {
         console.error("Could not extract a valid JSON string from AI response for flashcards.");
         console.error("Raw AI response for flashcards:", rawTextOutput);
-        throw new Error("AI response for flashcards was not in the expected JSON format.");
+        throw new Error("AI response for flashcards was not in the expected JSON format or was missing.");
     }
         
     const flashcardsArray = JSON.parse(jsonString);
     
-    if (!Array.isArray(flashcardsArray) || !flashcardsArray.every(fc => typeof fc.term === 'string' && typeof fc.definition === 'string')) {
-        console.error("Parsed flashcards JSON does not match expected structure:", flashcardsArray);
-        throw new Error("Generated flashcards JSON is not in the expected array of {term, definition} objects.");
+    // Validate structure of the parsed array
+    if (!Array.isArray(flashcardsArray) || !flashcardsArray.every(fc => 
+        typeof fc === 'object' && fc !== null &&
+        typeof fc.term === 'string' && fc.term.trim() !== '' &&
+        typeof fc.definition === 'string' && fc.definition.trim() !== ''
+    )) {
+        console.error("Parsed flashcards JSON does not match expected structure [{term, definition}]:", flashcardsArray);
+        throw new Error("Generated flashcards JSON is not in the expected array of {term, definition} objects with non-empty strings.");
     }
     return flashcardsArray;
 
   } catch (e) {
-    console.error("Error parsing flashcards JSON from Google AI:", e);
+    // Log specific parsing errors if they occur
+    if (e instanceof SyntaxError) {
+        console.error("SyntaxError parsing flashcards JSON from Google AI:", e.message);
+    } else {
+        console.error("Error processing flashcards from Google AI:", e.message);
+    }
     console.error("Raw AI response for flashcards (if not already logged):", data.candidates[0].content.parts[0].text);
-    // Append original error message if it's a parsing error
+    // Provide a more specific error message if it's a known issue
     const message = e.message.includes("JSON at position") 
         ? `Failed to parse flashcards from AI response: ${e.message}`
-        : e.message; // Use the error message from extractJsonFromString or validation
+        : e.message; 
     throw new Error(message);
   }
 }
@@ -261,17 +319,16 @@ Respond ONLY with a valid JSON array of objects in the following format, and not
   }
 ]
 
-Do NOT include any explanatory text before or after the JSON array.
-The JSON should be the only content in your response.
+Do NOT include any explanatory text, comments, or markdown formatting before or after the JSON array.
+The JSON array should be the only content in your response.
 
 Text to process:
 ${text}`;
 
   const contents = [{ role: "user", parts: [{ text: prompt }] }];
-
-  const generationConfig = {
+  const generationConfig = { 
     maxOutputTokens: 2000, // Allow ample tokens for JSON structure
-    // No responseMimeType or responseSchema, relying on prompt
+    // temperature: 0.5
   };
 
   const data = await callGoogleAI(contents, generationConfig);
@@ -283,25 +340,31 @@ ${text}`;
     if (!jsonString) {
         console.error("Could not extract a valid JSON string from AI response for quiz.");
         console.error("Raw AI response for quiz:", rawTextOutput);
-        throw new Error("AI response for quiz was not in the expected JSON format.");
+        throw new Error("AI response for quiz was not in the expected JSON format or was missing.");
     }
 
     const quizArray = JSON.parse(jsonString);
 
+    // Validate structure of the parsed array
     if (!Array.isArray(quizArray) || !quizArray.every(q => 
-        typeof q.question === 'string' &&
+        typeof q === 'object' && q !== null &&
+        typeof q.question === 'string' && q.question.trim() !== '' &&
         Array.isArray(q.options) && q.options.length >= 2 && q.options.length <= 4 &&
-        q.options.every(opt => typeof opt === 'string') &&
-        typeof q.correctAnswer === 'string' &&
+        q.options.every(opt => typeof opt === 'string' && opt.trim() !== '') &&
+        typeof q.correctAnswer === 'string' && q.correctAnswer.trim() !== '' &&
         q.options.includes(q.correctAnswer)
     )) {
         console.error("Parsed quiz JSON does not match expected structure:", quizArray);
-        throw new Error("Generated quiz JSON is not in the expected format or correctAnswer is invalid.");
+        throw new Error("Generated quiz JSON is not in the expected format, has empty fields, or correctAnswer is invalid.");
     }
     return quizArray;
 
   } catch (e) {
-    console.error("Error parsing quiz JSON from Google AI:", e);
+    if (e instanceof SyntaxError) {
+        console.error("SyntaxError parsing quiz JSON from Google AI:", e.message);
+    } else {
+        console.error("Error processing quiz from Google AI:", e.message);
+    }
     console.error("Raw AI response for quiz (if not already logged):", data.candidates[0].content.parts[0].text);
     const message = e.message.includes("JSON at position")
         ? `Failed to parse quiz from AI response: ${e.message}`
@@ -310,8 +373,35 @@ ${text}`;
   }
 }
 
+/**
+ * Generates an explanation for a given text snippet.
+ * @param {string} snippet - The text snippet to explain.
+ * @returns {Promise<string>} The generated explanation.
+ */
+async function explainTextSnippet(snippet) {
+  if (!snippet || snippet.trim() === "") {
+    throw new Error("Snippet to explain cannot be empty.");
+  }
+  const prompt = `You are a helpful assistant. Briefly explain the following concept, term, or phrase in simple and clear language. Focus on providing a concise definition or explanation suitable for a student seeking quick clarification. Do not add any conversational filler like "Okay, here's an explanation...". Just provide the explanation directly.
+
+Concept/Term/Phrase to explain:
+"${snippet}"
+
+Explanation:`;
+  
+  const contents = [{ role: "user", parts: [{ text: prompt }] }];
+  const generationConfig = {
+    maxOutputTokens: 300, // Increased slightly for potentially more nuanced short explanations
+    temperature: 0.5 
+  };
+  const data = await callGoogleAI(contents, generationConfig);
+  return data.candidates[0].content.parts[0].text.trim();
+}
+
+
 module.exports = {
   generateSummary,
   generateFlashcards,
   generateQuiz,
+  explainTextSnippet,
 };

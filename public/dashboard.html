@@ -10,63 +10,53 @@
     <header>
         <div class="container">
             <h1>Smart Study AI - Dashboard</h1>
-            <nav>
-                <a href="index.html">Home (New Upload)</a>
-                <button id="logoutButton">Logout</button>
-            </nav>
+            <nav><a href="index.html">Home (New Upload)</a><button id="logoutButton">Logout</button></nav>
         </div>
     </header>
-
     <main class="container">
         <h2>My Saved Study Sessions</h2>
-        <div id="sessionsList" class="sessions-grid">
-            <p id="loadingSessions">Loading your sessions...</p>
-        </div>
-
+        <div id="sessionsList" class="sessions-grid"><p id="loadingSessions">Loading...</p></div>
         <div id="sessionDetailModal" class="modal hidden">
             <div class="modal-content large">
                 <span class="close-button" id="closeSessionDetailModalButton">&times;</span>
                 <h3 id="sessionModalTitle">Session Details</h3>
-                
                 <div class="session-meta">
                     <p><strong>Original File:</strong> <span id="modalOriginalFilename"></span></p>
                     <p><strong>Created:</strong> <span id="modalCreatedAt"></span></p>
                     <p><strong>Last Updated:</strong> <span id="modalUpdatedAt"></span></p>
                 </div>
-
                 <div class="tabs">
                     <button class="tab-link active" data-tab="modalSummaryTab">Summary</button>
                     <button class="tab-link" data-tab="modalFlashcardsTab">Flashcards</button>
                     <button class="tab-link" data-tab="modalQuizTab">Quiz</button>
                     <button class="tab-link" data-tab="modalOriginalTextTab">Original Text</button>
                 </div>
-    
                 <div id="modalSummaryTab" class="tab-content active">
-                    <h4>Summary</h4>
-                    <pre id="modalSummaryOutput" class="output-box"></pre>
+                    <h4>Summary <small id="modalExplainInstruction" class="hidden explain-instruction">(Select text to explain)</small></h4>
+                    <div class="actions">
+                         <button id="modalExplainSelectedSummaryTextButton" class="utility-button hidden" title="Explain selected text">Explain Selection</button>
+                    </div>
+                    <div id="modalSummaryOutput" class="output-box"></div>
+                    <div id="modalExplanationOutput" class="output-box hidden" style="margin-top: 1rem; border-color: #3498db;"></div>
                 </div>
-    
-                <div id="modalFlashcardsTab" class="tab-content">
-                    <h4>Flashcards</h4>
-                    <div id="modalFlashcardsOutput" class="output-box flashcards-container"></div>
-                </div>
-    
-                <div id="modalQuizTab" class="tab-content">
-                    <h4>Quiz</h4>
-                    <div id="modalQuizOutput" class="output-box quiz-container"></div>
-                </div>
-
-                <div id="modalOriginalTextTab" class="tab-content">
-                    <h4>Original Extracted Text</h4>
-                    <pre id="modalOriginalTextOutput" class="output-box"></pre>
-                </div>
-
+                <div id="modalFlashcardsTab" class="tab-content"><h4>Flashcards</h4><div id="modalFlashcardsOutput" class="output-box flashcards-container"></div></div>
+                <div id="modalQuizTab" class="tab-content"><h4>Quiz</h4><div id="modalQuizOutput" class="output-box quiz-container"></div></div>
+                <div id="modalOriginalTextTab" class="tab-content"><h4>Original Extracted Text</h4><pre id="modalOriginalTextOutput" class="output-box"></pre></div>
                 <div class="modal-actions">
                     <button id="regenerateButton">Regenerate Content</button>
-                    <div id="regenerateOptions" class="hidden options-group">
-                        <label><input type="checkbox" name="regenOutputFormat" value="summary"> Summary</label>
+                    <div id="regenerateOptions" class="hidden">
+                        <p>Select formats to regenerate:</p>
+                        <label><input type="checkbox" name="regenOutputFormat" value="summary" data-controls="modalSummaryRegenOptions"> Summary</label>
                         <label><input type="checkbox" name="regenOutputFormat" value="flashcards"> Flashcards</label>
                         <label><input type="checkbox" name="regenOutputFormat" value="quiz"> Quiz</label>
+                        <div id="modalSummaryRegenOptions" class="options-group hidden">
+                            <h5>Summary Regeneration Options:</h5>
+                            <div><p>Length:</p><label><input type="radio" name="modalSummaryLength" value="short"> Short</label><label><input type="radio" name="modalSummaryLength" value="medium" checked> Medium</label><label><input type="radio" name="modalSummaryLength" value="long"> Long</label></div>
+                            <div><p>Style:</p><label><input type="radio" name="modalSummaryStyle" value="paragraph" checked> Paragraph</label><label><input type="radio" name="modalSummaryStyle" value="bullets"> Bullet Points</label></div>
+                            <div><label for="modalSummaryKeywords">Keywords to Focus On (optional):</label><input type="text" id="modalSummaryKeywords" placeholder="e.g., concept1, term2"></div>
+                            <div><label for="modalSummaryAudience">Audience/Purpose (optional):</label><select id="modalSummaryAudience"><option value="">Default</option><option value="quick review">For Quick Review</option><option value="deep understanding">For Deep Understanding</option><option value="explain to a beginner">To Explain to a Beginner</option><option value="presentation outline">As a Presentation Outline</option></select></div>
+                            <div><label for="modalSummaryNegativeKeywords">Keywords/Topics to Exclude (optional):</label><input type="text" id="modalSummaryNegativeKeywords" placeholder="e.g., dates, specific examples"></div>
+                        </div>
                         <button id="confirmRegenerateButton">Confirm Regeneration</button>
                         <p id="regenerateStatus"></p>
                     </div>
@@ -75,14 +65,7 @@
             </div>
         </div>
     </main>
-
-    <footer>
-        <div class="container">
-            <p>&copy; <span id="currentYearDashboard"></span> Smart Study AI. All rights reserved.</p>
-        </div>
-    </footer>
-
-    <script src="js/api.js"></script>
-    <script src="js/ui.js"></script> <script src="js/dashboard_app.js"></script>
+    <footer><div class="container"><p>&copy; <span id="currentYearDashboard"></span> Smart Study AI.</p></div></footer>
+    <script src="js/api.js"></script><script src="js/ui.js"></script><script src="js/dashboard_app.js"></script>
 </body>
 </html>
