@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Study - AI Powered Learning</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js'></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Smart Study AI</h1>
+            <nav>
+                <button id="loginNavButton">Login</button>
+                <button id="registerNavButton">Register</button>
+                <button id="dashboardNavButton" class="hidden">Dashboard</button>
+                <button id="logoutNavButton" class="hidden">Logout</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <section id="userActions" class="hidden">
+            <p>Welcome, <span id="userEmail"></span>!</p>
+        </section>
+
+        <section id="uploadSection">
+            <h2>Upload Your Study Material</h2>
+            <p>Upload JPG, PNG, PDF, or TXT files. Max 10MB.</p>
+            <div id="dropZone" class="drop-zone">
+                <p>Drag & drop files here or click to select</p>
+                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf,.txt" multiple style="display: none;">
+            </div>
+            <div id="filePreviewContainer"></div>
+            
+            <div class="options-group">
+                <h3>Select Output Formats:</h3>
+                <label><input type="checkbox" name="outputFormat" value="summary" checked> Summary</label>
+                <label><input type="checkbox" name="outputFormat" value="flashcards"> Flashcards</label>
+                <label><input type="checkbox" name="outputFormat" value="quiz"> Quiz</label>
+                <label><input type="checkbox" name="outputFormat" value="all"> All</label>
+            </div>
+
+            <button id="processButton" disabled>Process Files</button>
+            <div id="processingStatus"></div>
+        </section>
+
+        <section id="resultsSection" class="hidden">
+            <h2>Generated Materials</h2>
+            <div class="tabs">
+                <button class="tab-link active" data-tab="summaryTab">Summary</button>
+                <button class="tab-link" data-tab="flashcardsTab">Flashcards</button>
+                <button class="tab-link" data-tab="quizTab">Quiz</button>
+            </div>
+
+            <div id="summaryTab" class="tab-content active">
+                <h3>Summary</h3>
+                <div class="actions">
+                    <button class="copy-button" data-target="summaryOutput">Copy Summary</button>
+                    <button class="download-button" data-target="summaryOutput" data-filename="summary.txt">Download Summary</button>
+                </div>
+                <pre id="summaryOutput" class="output-box"></pre>
+            </div>
+
+            <div id="flashcardsTab" class="tab-content">
+                <h3>Flashcards</h3>
+                <div class="actions">
+                    <button class="copy-button" data-target="flashcardsOutput">Copy Flashcards (JSON)</button>
+                    <button class="download-button" data-target="flashcardsOutput" data-filename="flashcards.json">Download Flashcards (JSON)</button>
+                </div>
+                <div id="flashcardsOutput" class="output-box flashcards-container"></div>
+            </div>
+
+            <div id="quizTab" class="tab-content">
+                <h3>Quiz</h3>
+                 <div class="actions">
+                    <button class="copy-button" data-target="quizOutputStructured">Copy Quiz (JSON)</button>
+                    <button class="download-button" data-target="quizOutputStructured" data-filename="quiz.json">Download Quiz (JSON)</button>
+                </div>
+                <div id="quizOutput" class="output-box quiz-container"></div>
+                <textarea id="quizOutputStructured" style="display:none;"></textarea> </div>
+        </section>
+    </main>
+
+    <div id="authModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-button" id="closeModalButton">&times;</span>
+            <h3 id="modalTitle">Login</h3>
+            <form id="authForm">
+                <div>
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div>
+                    <label for="password">Password:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" id="authSubmitButton">Login</button>
+                <p id="authFormMessage"></p>
+                <p id="authFormToggle">Don't have an account? <a href="#" id="toggleToRegister">Register</a></p>
+            </form>
+        </div>
+    </div>
+    
+    <footer>
+        <div class="container">
+            <p>&copy; <span id="currentYear"></span> Smart Study AI. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
