@@ -1,8 +1,3 @@
-/**
- * @file public/js/dashboard_app.js
- * @description JavaScript for the user dashboard (dashboard.html).
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     const sessionsListContainer = document.getElementById('sessionsList');
     const loadingSessionsMessage = document.getElementById('loadingSessions');
@@ -36,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = 'index.html'; 
         return; 
     }
-    setupTabs('#sessionDetailModal .tabs'); // Assumes ui.js is loaded and setupTabs is global
+    setupTabs('#sessionDetailModal .tabs');
 
     async function loadUserSessions() {
         if (!sessionsListContainer || !loadingSessionsMessage) return;
@@ -53,12 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     sessionsListContainer.appendChild(createSessionCard(session));
                 });
             } else {
-                sessionsListContainer.innerHTML = '<p>You have no saved study sessions yet.</p>';
+                sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
             }
         } catch (error) {
-            console.error('Failed to load sessions:', error);
             const message = error.data?.message || error.message || 'Could not load your sessions. Please try again.';
-            sessionsListContainer.innerHTML = `<p class="error-message">${message}</p>`;
+            sessionsListContainer.innerHTML = `<p class="error-message col-span-full text-center py-5">${message}</p>`;
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
                 localStorage.removeItem('userEmail');
@@ -71,23 +65,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createSessionCard(session) {
         const card = document.createElement('div');
-        card.className = 'session-card';
+        card.className = 'session-card bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 ease-in-out overflow-hidden cursor-pointer flex flex-col';
         card.dataset.sessionId = session.id;
 
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'p-6 flex-grow';
+
         const title = document.createElement('h3');
+        title.className = 'text-xl font-semibold text-indigo-700 mb-2 truncate';
         title.textContent = session.original_filename || 'Untitled Session';
-        card.appendChild(title);
+        contentDiv.appendChild(title);
 
         const createdP = document.createElement('p');
-        // Format date and time nicely
+        createdP.className = 'text-xs text-slate-500 mb-1';
         const createdDate = new Date(session.created_at);
-        createdP.innerHTML = `<strong>Created:</strong> ${createdDate.toLocaleDateString()} ${createdDate.toLocaleTimeString()}`;
-        card.appendChild(createdP);
+        createdP.innerHTML = `<strong>Created:</strong> ${createdDate.toLocaleDateString()} ${createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        contentDiv.appendChild(createdP);
         
         const summaryPreview = document.createElement('p');
-        summaryPreview.className = 'summary-preview';
-        summaryPreview.textContent = session.summary ? (session.summary.substring(0, 100) + '...') : 'No summary available.';
-        card.appendChild(summaryPreview);
+        summaryPreview.className = 'summary-preview text-slate-600 mt-3 text-sm leading-relaxed h-20 overflow-hidden relative';
+        summaryPreview.textContent = session.summary ? (session.summary.substring(0, 120) + (session.summary.length > 120 ? '...' : '')) : 'No summary available.';
+        const fadeSpan = document.createElement('span');
+        fadeSpan.className = 'absolute bottom-0 left-0 w-full h-8 bg-gradient-to-t from-white to-transparent';
+        if (session.summary && session.summary.length > 120) {
+            summaryPreview.appendChild(fadeSpan);
+        }
+        contentDiv.appendChild(summaryPreview);
+        card.appendChild(contentDiv);
+
+        const footerDiv = document.createElement('div');
+        footerDiv.className = 'bg-slate-50 px-6 py-3 border-t border-slate-200';
+        const viewDetailsButton = document.createElement('button');
+        viewDetailsButton.className = 'text-sm font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none';
+        viewDetailsButton.textContent = 'View Details';
+        footerDiv.appendChild(viewDetailsButton);
+        card.appendChild(footerDiv);
 
         card.addEventListener('click', () => openSessionDetailModal(session.id));
         return card;
@@ -98,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(modalExplainInstruction) modalExplainInstruction.classList.add('hidden');
 
         if (!summaryText) {
-            modalSummaryOutput.innerHTML = '<p>No summary generated.</p>';
+            modalSummaryOutput.innerHTML = '<p class="text-slate-500">No summary generated.</p>';
             return;
         }
         
@@ -113,13 +125,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 firstHeadingFound = true;
                 if (currentSectionDetails) { 
                     const contentDiv = document.createElement('div');
+                    contentDiv.className = 'p-3 border-t border-slate-200';
                     contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
                     currentSectionDetails.appendChild(contentDiv);
                     modalSummaryOutput.appendChild(currentSectionDetails);
                 }
                 currentSectionDetails = document.createElement('details');
+                currentSectionDetails.className = 'bg-white border border-slate-200 rounded-md mb-3 overflow-hidden';
                 currentSectionDetails.open = true; 
                 const summaryTitle = document.createElement('summary');
+                summaryTitle.className = 'p-3 font-semibold cursor-pointer hover:bg-slate-50 list-none flex justify-between items-center';
                 summaryTitle.innerHTML = processTextForDisplay(trimmedLine.substring(4), keywordsToHighlight); 
                 currentSectionDetails.appendChild(summaryTitle);
                 sectionContentHtml = ''; 
@@ -130,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (firstHeadingFound && currentSectionDetails) {
             const contentDiv = document.createElement('div');
+            contentDiv.className = 'p-3 border-t border-slate-200';
             contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
             currentSectionDetails.appendChild(contentDiv);
             modalSummaryOutput.appendChild(currentSectionDetails);
@@ -141,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const relevantLines = firstBulletIdx !== -1 ? currentContentLines.slice(firstBulletIdx) : [];
                 if(relevantLines.length > 0) {
                     const ul = document.createElement('ul');
+                    ul.className = 'list-disc list-inside space-y-1';
                     relevantLines.forEach(l => {
                         const trimmedL = l.trim();
                         if (trimmedL.startsWith('* ') || trimmedL.startsWith('- ')) {
@@ -186,10 +203,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector('input[name="modalSummaryStyle"][value="paragraph"]').checked = true;
 
         try {
-            // Using a generic processing status for modal loading as well
-            showMessage('regenerateStatus', 'Loading session details...', 'success'); // Use regenerateStatus for modal feedback
+            showMessage('regenerateStatus', 'Loading session details...', 'success');
             const { session } = await apiGetSessionDetails(sessionId);
-            clearMessage('regenerateStatus'); // Clear loading message
+            clearMessage('regenerateStatus');
 
             modalTitle.textContent = session.original_filename || 'Session Details';
             modalOriginalFilename.textContent = session.original_filename || 'N/A';
@@ -202,19 +218,19 @@ document.addEventListener('DOMContentLoaded', () => {
             renderQuiz(modalQuizOutput, session.quiz, currentKeywordsForModalHighlighting); 
             modalOriginalTextOutput.textContent = session.extracted_text || 'Original text not available.';
             
-            document.querySelectorAll('#sessionDetailModal .tab-link').forEach(tl => tl.classList.remove('active'));
-            document.querySelectorAll('#sessionDetailModal .tab-content').forEach(tc => tc.classList.remove('active'));
-            const firstTabLink = document.querySelector('#sessionDetailModal .tab-link');
-            const firstTabContent = document.getElementById(firstTabLink.dataset.tab);
-            if(firstTabLink) firstTabLink.classList.add('active');
+            document.querySelectorAll('#sessionDetailModal .tab-link').forEach(tl => tl.removeAttribute('data-active'));
+            document.querySelectorAll('#sessionDetailModal .tab-content').forEach(tc => { tc.classList.add('hidden'); tc.removeAttribute('data-active'); });
+            
+            const firstTabLink = document.querySelector('#sessionDetailModal .tab-link[data-tab="modalSummaryTab"]');
+            const firstTabContent = document.getElementById('modalSummaryTab');
+            if(firstTabLink) firstTabLink.dataset.active = "true";
             if(firstTabContent) {
-                firstTabContent.classList.add('active');
-                firstTabContent.classList.remove('hidden'); // Ensure it's visible
+                firstTabContent.classList.remove('hidden');
+                firstTabContent.dataset.active = "true";
             }
             toggleElementVisibility('sessionDetailModal', true);
         } catch (error) {
             clearMessage('regenerateStatus');
-            console.error(`Failed to load session ${sessionId}:`, error);
             alert(`Error: ${error.message || 'Could not load session details.'}`);
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
@@ -232,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (sessionDetailModal) {
          sessionDetailModal.addEventListener('click', (event) => {
-            if (event.target === sessionDetailModal) { // Click on modal backdrop
+            if (event.target === sessionDetailModal) {
                 toggleElementVisibility('sessionDetailModal', false);
                 currentOpenSessionId = null;
             }
@@ -292,7 +308,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalUpdatedAt.textContent = new Date(updatedSession.updated_at).toLocaleString();
                 loadUserSessions(); 
             } catch (error) {
-                console.error('Regeneration failed:', error);
                 showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
             } finally {
                 confirmRegenerateButton.disabled = false; 
@@ -314,7 +329,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentOpenSessionId = null;
                 loadUserSessions(); 
             } catch (error) {
-                console.error('Deletion failed:', error);
                 alert(`Failed to delete session: ${error.message}`);
             } finally {
                 deleteSessionButton.disabled = false; 
@@ -325,7 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (modalSummaryOutput && modalExplainButton && modalExplanationOutput) {
         document.addEventListener('selectionchange', () => { 
-            if (sessionDetailModal.classList.contains('hidden') || !document.getElementById('modalSummaryTab')?.classList.contains('active')) {
+            if (sessionDetailModal.classList.contains('hidden') || !document.getElementById('modalSummaryTab')?.dataset.active) {
                 if(modalExplainButton) modalExplainButton.classList.add('hidden');
                 return;
             }
@@ -355,12 +369,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalExplanationOutput.classList.remove('hidden');
                 clearMessage('regenerateStatus');
             } catch (error) {
-                console.error('Error explaining text in modal:', error);
                 modalExplanationOutput.innerHTML = `<p class="error-message">Error: ${error.message || 'Could not get explanation.'}</p>`;
                 modalExplanationOutput.classList.remove('hidden');
                 showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
             } finally {
-                modalExplainButton.disabled = false; modalExplainButton.textContent = 'Explain Selection';
+                modalExplainButton.disabled = false; modalExplainButton.textContent = 'Explain';
             }
         });
     }

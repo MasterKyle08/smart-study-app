@@ -1,13 +1,9 @@
-/**
- * @file public/js/ui.js
- * @description UI manipulation functions for the Smart Study application.
- */
-
 function showMessage(elementId, message, type = 'error') {
   const element = document.getElementById(elementId);
   if (element) {
     element.textContent = message;
-    element.className = type === 'success' ? 'success-message' : 'error-message';
+    element.className = ''; 
+    element.classList.add(type === 'success' ? 'success-message' : 'error-message', 'block', 'mt-4', 'p-3', 'rounded-md');
     element.classList.remove('hidden');
   }
 }
@@ -17,17 +13,29 @@ function clearMessage(elementId) {
   if (element) {
     element.textContent = '';
     element.className = '';
-    element.classList.add('hidden');
+    element.classList.add('hidden', 'mt-4', 'text-sm');
   }
 }
 
 function toggleElementVisibility(elementId, forceShow) {
     const element = document.getElementById(elementId);
     if (element) {
-        if (typeof forceShow === 'boolean') {
-            element.classList.toggle('hidden', !forceShow);
-        } else {
-            element.classList.toggle('hidden');
+        const isModal = element.id === 'authModal' || element.id === 'sessionDetailModal';
+        if (isModal) {
+            // For modals, we only toggle the data-visible attribute.
+            // The HTML structure and Tailwind classes handle the actual display and transitions.
+            if (typeof forceShow === 'boolean') {
+                element.dataset.visible = forceShow ? 'true' : 'false';
+            } else { // Toggle logic
+                element.dataset.visible = element.dataset.visible === 'true' ? 'false' : 'true';
+            }
+        } else { 
+            // For non-modal elements, toggle the 'hidden' class as before.
+            if (typeof forceShow === 'boolean') {
+                element.classList.toggle('hidden', !forceShow);
+            } else {
+                element.classList.toggle('hidden');
+            }
         }
     }
 }
@@ -56,12 +64,12 @@ function showProcessingStatus(message, showSpinner = true) {
     if (statusDiv) {
         let html = '';
         if (showSpinner) {
-            html += '<div class="loading-spinner"></div> ';
+            html += '<div class="inline-block animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-indigo-600 mr-2 align-middle"></div>';
         }
-        html += message;
+        html += `<span class="text-slate-600 align-middle">${message}</span>`;
         statusDiv.innerHTML = html;
-        statusDiv.classList.remove('hidden');
-        statusDiv.classList.remove('error-message', 'success-message'); 
+        statusDiv.className = 'mt-6 text-center text-sm flex items-center justify-center';
+        statusDiv.classList.remove('hidden', 'success-message', 'error-message'); 
     }
 }
 
@@ -99,7 +107,6 @@ function processTextForDisplay(text, keywordsToHighlight = []) {
 }
 
 function displayResults(results) {
-    console.log("Full results object received in displayResults:", JSON.stringify(results, null, 2));
     const resultsSection = document.getElementById('resultsSection');
     const summaryOutput = document.getElementById('summaryOutput');
     const flashcardsOutput = document.getElementById('flashcardsOutput');
@@ -110,15 +117,15 @@ function displayResults(results) {
     const explainInstruction = document.getElementById('explainInstruction'); 
 
     if (summaryOutput) summaryOutput.innerHTML = '';
-    if (flashcardsOutput) flashcardsOutput.innerHTML = '<p>No flashcards generated.</p>';
-    if (quizOutput) quizOutput.innerHTML = '<p>No quiz questions generated.</p>';
+    if (flashcardsOutput) flashcardsOutput.innerHTML = '<p class="text-slate-500 text-sm">No flashcards generated.</p>';
+    if (quizOutput) quizOutput.innerHTML = '<p class="text-slate-500 text-sm">No quiz questions generated.</p>';
     if (quizOutputStructured) quizOutputStructured.value = '';
     if (explainButton) explainButton.classList.add('hidden'); 
     if (explanationOutput) { explanationOutput.innerHTML = ''; explanationOutput.classList.add('hidden');}
     if (explainInstruction) explainInstruction.classList.add('hidden'); 
 
-    document.querySelectorAll('.tab-content').forEach(tc => { tc.classList.remove('active'); tc.classList.add('hidden'); });
-    document.querySelectorAll('.tab-link').forEach(tl => { tl.classList.remove('active'); tl.classList.add('hidden'); });
+    document.querySelectorAll('#resultsSection .tab-content').forEach(tc => { tc.classList.add('hidden'); tc.removeAttribute('data-active'); });
+    document.querySelectorAll('#resultsSection .tab-link').forEach(tl => { /* don't hide tab links, just manage active state */ tl.removeAttribute('data-active'); });
     
     let firstVisibleTab = null;
     const keywordsForHighlighting = window.currentKeywordsForHighlighting || results.summaryKeywords || [];
@@ -138,13 +145,16 @@ function displayResults(results) {
                     firstHeadingFound = true;
                     if (currentSectionDetails) { 
                         const contentDiv = document.createElement('div');
+                        contentDiv.className = 'details-accordion-content'; 
                         contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsForHighlighting);
                         currentSectionDetails.appendChild(contentDiv);
                         summaryOutput.appendChild(currentSectionDetails);
                     }
                     currentSectionDetails = document.createElement('details');
+                    currentSectionDetails.className = 'details-accordion';
                     currentSectionDetails.open = true; 
                     const summaryTitle = document.createElement('summary');
+                    summaryTitle.className = 'details-accordion-summary';
                     summaryTitle.innerHTML = processTextForDisplay(trimmedLine.substring(4), keywordsForHighlighting); 
                     currentSectionDetails.appendChild(summaryTitle);
                     sectionContentHtml = ''; 
@@ -155,6 +165,7 @@ function displayResults(results) {
 
             if (firstHeadingFound && currentSectionDetails) {
                 const contentDiv = document.createElement('div');
+                contentDiv.className = 'details-accordion-content';
                 contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsForHighlighting);
                 currentSectionDetails.appendChild(contentDiv);
                 summaryOutput.appendChild(currentSectionDetails);
@@ -164,10 +175,10 @@ function displayResults(results) {
                     let firstBulletIdx = lines.findIndex(l => l.trim().startsWith('* ') || l.trim().startsWith('- '));
                     const currentContentLines = sectionContentHtml.trim().split('\n');
                     firstBulletIdx = currentContentLines.findIndex(l => l.trim().startsWith('* ') || l.trim().startsWith('- '));
-
                     const relevantLines = firstBulletIdx !== -1 ? currentContentLines.slice(firstBulletIdx) : [];
                     if(relevantLines.length > 0) {
                         const ul = document.createElement('ul');
+                        ul.className = 'list-disc list-inside space-y-1 pl-1';
                         relevantLines.forEach(l => {
                             const trimmedL = l.trim();
                             if (trimmedL.startsWith('* ') || trimmedL.startsWith('- ')) {
@@ -192,8 +203,9 @@ function displayResults(results) {
                 explainInstruction.classList.remove('hidden');
             }
         }
-        document.querySelector('[data-tab="summaryTab"]')?.classList.remove('hidden');
-        document.getElementById('summaryTab')?.classList.remove('hidden');
+        // No longer hiding tab links, just content
+        // document.querySelector('[data-tab="summaryTab"]')?.classList.remove('hidden');
+        // document.getElementById('summaryTab')?.classList.remove('hidden');
         if (!firstVisibleTab) firstVisibleTab = 'summaryTab';
     } else {
         if (explainInstruction) explainInstruction.classList.add('hidden');
@@ -201,8 +213,8 @@ function displayResults(results) {
 
     if (results.flashcards && results.flashcards.length > 0) {
         if (flashcardsOutput) renderFlashcards(flashcardsOutput, results.flashcards, keywordsForHighlighting);
-        document.querySelector('[data-tab="flashcardsTab"]')?.classList.remove('hidden');
-        document.getElementById('flashcardsTab')?.classList.remove('hidden');
+        // document.querySelector('[data-tab="flashcardsTab"]')?.classList.remove('hidden');
+        // document.getElementById('flashcardsTab')?.classList.remove('hidden');
          if (!firstVisibleTab) firstVisibleTab = 'flashcardsTab';
     }
 
@@ -211,40 +223,46 @@ function displayResults(results) {
         if (quizOutputStructured && results.quiz && results.quiz.length > 0) { 
              quizOutputStructured.value = JSON.stringify(results.quiz, null, 2);
         }
-        document.querySelector('[data-tab="quizTab"]')?.classList.remove('hidden');
-        document.getElementById('quizTab')?.classList.remove('hidden');
+        // document.querySelector('[data-tab="quizTab"]')?.classList.remove('hidden');
+        // document.getElementById('quizTab')?.classList.remove('hidden');
         if (!firstVisibleTab) firstVisibleTab = 'quizTab';
     }
     
+    // Ensure all tab links are visible
+    document.querySelectorAll('#resultsSection .tab-link').forEach(tl => tl.classList.remove('hidden'));
+
     if (firstVisibleTab) {
-        document.getElementById(firstVisibleTab)?.classList.add('active');
-        document.querySelector(`.tab-link[data-tab="${firstVisibleTab}"]`)?.classList.add('active');
+        const tabToActivate = document.getElementById(firstVisibleTab);
+        const linkToActivate = document.querySelector(`.tab-link[data-tab="${firstVisibleTab}"]`);
+        if(tabToActivate) {
+            tabToActivate.classList.remove('hidden'); // Show the content for the first visible tab
+            tabToActivate.dataset.active = "true";
+        }
+        if(linkToActivate) linkToActivate.dataset.active = "true";
         if (resultsSection) resultsSection.classList.remove('hidden');
     } else {
          if (resultsSection) resultsSection.classList.add('hidden'); 
+         // If no results, hide all tab links as well
+         document.querySelectorAll('#resultsSection .tab-link').forEach(tl => tl.classList.add('hidden'));
     }
 }
 
-/**
- * Renders flashcards into the specified container.
- * @param {HTMLElement} container - The HTML element to render flashcards into.
- * @param {Array<object>} flashcards - Array of flashcard objects {term, definition}.
- * @param {string[]} [keywordsToHighlight=[]] - Optional keywords to highlight in content.
- */
 function renderFlashcards(container, flashcards, keywordsToHighlight = []) {
     container.innerHTML = ''; 
     if (!flashcards || flashcards.length === 0) {
-        container.innerHTML = '<p>No flashcards generated.</p>';
+        container.innerHTML = '<p class="text-slate-500 text-sm">No flashcards generated.</p>';
         return;
     }
     flashcards.forEach(fc => {
         const cardDiv = document.createElement('div');
-        cardDiv.className = 'flashcard';
+        cardDiv.className = 'flashcard-custom';
         
         const termEl = document.createElement('strong');
+        termEl.className = 'flashcard-custom-term';
         termEl.innerHTML = processTextForDisplay(fc.term, keywordsToHighlight); 
         
         const defEl = document.createElement('p');
+        defEl.className = 'flashcard-custom-definition';
         defEl.innerHTML = processTextForDisplay(fc.definition.replace(/\n/g, '<br>'), keywordsToHighlight);
         
         cardDiv.appendChild(termEl);
@@ -253,16 +271,10 @@ function renderFlashcards(container, flashcards, keywordsToHighlight = []) {
     });
 }
 
-/**
- * Renders quiz questions into the specified container.
- * @param {HTMLElement} container - The HTML element to render quiz questions into.
- * @param {Array<object>} quiz - Array of quiz objects {question, options, correctAnswer}.
- * @param {string[]} [keywordsToHighlight=[]] - Optional keywords to highlight in content.
- */
 function renderQuiz(container, quiz, keywordsToHighlight = []) {
     container.innerHTML = ''; 
     if (!quiz || !Array.isArray(quiz) || quiz.length === 0) {
-        container.innerHTML = '<p>No quiz questions generated or data is invalid.</p>';
+        container.innerHTML = '<p class="text-slate-500 text-sm">No quiz questions generated or data is invalid.</p>';
         return;
     }
     quiz.forEach((q, index) => {
@@ -272,29 +284,31 @@ function renderQuiz(container, quiz, keywordsToHighlight = []) {
             typeof q.correctAnswer !== 'string') {
             const errorItem = document.createElement('p');
             errorItem.textContent = `Error: Invalid data for question ${index + 1}.`;
-            errorItem.style.color = 'red';
+            errorItem.className = 'text-red-600 text-xs';
             container.appendChild(errorItem);
             return; 
         }
 
         const questionDiv = document.createElement('div');
-        questionDiv.className = 'quiz-question';
+        questionDiv.className = 'quiz-question-custom';
         
         const qText = document.createElement('p');
-        qText.className = 'question-text';
+        qText.className = 'quiz-question-custom-text';
         qText.innerHTML = `${index + 1}. ${processTextForDisplay(q.question, keywordsToHighlight)}`;
         questionDiv.appendChild(qText);
         
         const optionsList = document.createElement('ul');
+        optionsList.className = 'quiz-question-custom-options';
         q.options.forEach((opt) => {
             const listItem = document.createElement('li');
+            // listItem.className = 'quiz-option-item'; // If specific option styling is needed
             listItem.innerHTML = processTextForDisplay(typeof opt === 'string' ? opt : JSON.stringify(opt), keywordsToHighlight);
             optionsList.appendChild(listItem);
         });
         questionDiv.appendChild(optionsList);
 
         const correctAnswerEl = document.createElement('p');
-        correctAnswerEl.className = 'correct-answer';
+        correctAnswerEl.className = 'quiz-question-custom-correct-answer';
         correctAnswerEl.innerHTML = `<strong>Correct Answer:</strong> ${processTextForDisplay(q.correctAnswer, keywordsToHighlight)}`; 
         questionDiv.appendChild(correctAnswerEl);
         
@@ -302,51 +316,36 @@ function renderQuiz(container, quiz, keywordsToHighlight = []) {
     });
 }
 
-/**
- * Sets up tab navigation.
- * @param {string} tabsContainerSelector - Selector for the container holding tab links.
- * @param {string} tabContentContainerSelector - Selector for the container holding tab content panes.
- */
 function setupTabs(tabsContainerSelector, tabContentContainerSelector = null) {
     const tabsContainer = document.querySelector(tabsContainerSelector);
     if (!tabsContainer) return;
 
-    const contentContainer = tabContentContainerSelector ? document.querySelector(tabContentContainerSelector) : document;
+    const contentContainer = tabContentContainerSelector ? document.querySelector(tabContentContainerSelector) : document.body;
 
     tabsContainer.addEventListener('click', (event) => {
-        if (event.target.classList.contains('tab-link')) {
-            const targetTabId = event.target.dataset.tab;
+        const clickedLink = event.target.closest('.tab-link');
+        if (clickedLink) {
+            const targetTabId = clickedLink.dataset.tab;
 
-            tabsContainer.querySelectorAll('.tab-link').forEach(link => link.classList.remove('active'));
+            tabsContainer.querySelectorAll('.tab-link').forEach(link => link.removeAttribute('data-active'));
             
-            const allTabContentsInScope = contentContainer === document ? 
-                                      document.querySelectorAll('.tab-content') : 
-                                      contentContainer.querySelectorAll('.tab-content');
+            const allTabContentsInScope = contentContainer.querySelectorAll('.tab-content');
 
             allTabContentsInScope.forEach(content => {
-                 content.classList.remove('active');
-                 // Also ensure they are hidden if not active
-                 if(content.id !== targetTabId) {
-                    content.classList.add('hidden');
-                 } else {
-                    content.classList.remove('hidden');
-                 }
+                 content.classList.add('hidden');
+                 content.removeAttribute('data-active');
             });
             
-            event.target.classList.add('active');
+            clickedLink.dataset.active = "true";
             const targetContent = document.getElementById(targetTabId);
             if (targetContent) {
-                targetContent.classList.add('active');
                 targetContent.classList.remove('hidden');
+                targetContent.dataset.active = "true";
             }
         }
     });
 }
 
-/**
- * Initializes the current year in a footer element.
- * @param {string} elementId - The ID of the span element to update with the year.
- */
 function setCurrentYear(elementId) {
     const yearSpan = document.getElementById(elementId);
     if (yearSpan) {

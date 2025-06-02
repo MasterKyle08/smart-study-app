@@ -1,8 +1,3 @@
-/**
- * @file public/js/auth.js
- * @description Handles authentication UI logic (login, registration, logout modals).
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     const authModal = document.getElementById('authModal');
     const loginNavButton = document.getElementById('loginNavButton');
@@ -12,49 +7,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalTitle = document.getElementById('modalTitle');
     const authSubmitButton = document.getElementById('authSubmitButton');
     const authFormToggle = document.getElementById('authFormToggle');
-    const toggleToRegisterLink = document.getElementById('toggleToRegister'); // Link text changes
+    // const toggleToRegisterLink = document.getElementById('toggleToRegister'); // No longer needed as a static element reference
     const authFormMessage = document.getElementById('authFormMessage');
     const logoutNavButton = document.getElementById('logoutNavButton');
     const dashboardNavButton = document.getElementById('dashboardNavButton');
 
     let isLoginMode = true;
 
-    /**
-     * Updates the auth modal and form for either login or registration mode.
-     */
     function updateAuthMode() {
+        if (!authFormToggle || !modalTitle || !authSubmitButton) return;
+        
         if (isLoginMode) {
             modalTitle.textContent = 'Login';
             authSubmitButton.textContent = 'Login';
-            authFormToggle.innerHTML = `Don't have an account? <a href="#" id="toggleToRegister">Register</a>`;
+            authFormToggle.innerHTML = `Don't have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Register</a>`;
         } else {
             modalTitle.textContent = 'Register';
             authSubmitButton.textContent = 'Register';
-            authFormToggle.innerHTML = `Already have an account? <a href="#" id="toggleToRegister">Login</a>`;
+            authFormToggle.innerHTML = `Already have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Login</a>`;
         }
-        // Re-attach event listener to the new link
-        document.getElementById('toggleToRegister').addEventListener('click', (e) => {
-            e.preventDefault();
-            isLoginMode = !isLoginMode;
-            clearMessage('authFormMessage');
-            authForm.reset();
-            updateAuthMode();
-        });
+        
+        const newToggleLink = document.getElementById('toggleToRegister');
+        if (newToggleLink) {
+            newToggleLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                isLoginMode = !isLoginMode;
+                if (authFormMessage) clearMessage('authFormMessage');
+                if (authForm) authForm.reset();
+                updateAuthMode();
+            });
+        }
     }
 
-    /**
-     * Opens the authentication modal.
-     * @param {boolean} startInLoginMode - True to open in login mode, false for registration.
-     */
     function openAuthModal(startInLoginMode) {
         isLoginMode = startInLoginMode;
         updateAuthMode();
-        authForm.reset();
-        clearMessage('authFormMessage');
+        if (authForm) authForm.reset();
+        if (authFormMessage) clearMessage('authFormMessage');
         toggleElementVisibility('authModal', true);
     }
 
-    // Event listeners for nav buttons
     if (loginNavButton) {
         loginNavButton.addEventListener('click', () => openAuthModal(true));
     }
@@ -65,7 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
         closeModalButton.addEventListener('click', () => toggleElementVisibility('authModal', false));
     }
 
-    // Close modal if clicked outside
     if (authModal) {
         authModal.addEventListener('click', (event) => {
             if (event.target === authModal) {
@@ -74,57 +65,57 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-
-    /**
-     * Handles the submission of the authentication form (login/register).
-     * @param {Event} event - The form submission event.
-     */
     async function handleAuthFormSubmit(event) {
         event.preventDefault();
-        clearMessage('authFormMessage');
+        if (authFormMessage) clearMessage('authFormMessage');
+        if (!authSubmitButton || !authForm) return;
+
         authSubmitButton.disabled = true;
         authSubmitButton.textContent = isLoginMode ? 'Logging in...' : 'Registering...';
 
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        if(!emailInput || !passwordInput) return;
+
+        const email = emailInput.value;
+        const password = passwordInput.value;
 
         try {
             let response;
             if (isLoginMode) {
                 response = await apiLogin(email, password);
-                showMessage('authFormMessage', 'Login successful! Redirecting...', 'success');
+                if (authFormMessage) showMessage('authFormMessage', 'Login successful! Redirecting...', 'success');
             } else {
                 response = await apiRegister(email, password);
-                showMessage('authFormMessage', 'Registration successful! You can now log in.', 'success');
-                // Optionally auto-login or switch to login mode
-                isLoginMode = true; // Switch to login mode after successful registration
-                updateAuthMode();   // Update form display
+                 if (authFormMessage) showMessage('authFormMessage', 'Registration successful! You can now log in.', 'success');
+                isLoginMode = true; 
+                updateAuthMode();   
             }
 
             if (response.token) {
                 localStorage.setItem('authToken', response.token);
-                localStorage.setItem('userEmail', response.user.email); // Store email for display
+                localStorage.setItem('userEmail', response.user.email); 
                 updateNav(true, response.user.email);
                 
-                // If login was successful, close modal. If registration, user might want to login next.
-                // For now, close modal on any success that yields a token and updates nav.
                 setTimeout(() => {
                     toggleElementVisibility('authModal', false);
-                    // If on index.html and login is successful, they might want to go to dashboard or just stay.
-                    // If they were trying to access a protected feature, redirect there.
-                    // For now, simple updateNav is enough. Dashboard button will appear.
                     if (window.location.pathname.endsWith('index.html') || window.location.pathname === '/') {
-                        // User is on the main page, no specific redirect needed beyond nav update.
-                        // Or, redirect to dashboard: window.location.href = '/dashboard.html';
+                        // No specific redirect needed beyond nav update.
                     }
                 }, 1500);
             }
         } catch (error) {
             const message = error.data?.message || error.message || 'An unknown error occurred.';
-            showMessage('authFormMessage', message, 'error');
+            if (authFormMessage) showMessage('authFormMessage', message, 'error');
         } finally {
             authSubmitButton.disabled = false;
-            updateAuthMode(); // Reset button text
+            // updateAuthMode(); // Already called in registration success, might cause issues if called again here.
+            // Let's ensure it's correctly set for the current mode if no mode switch happened.
+             if (isLoginMode) {
+                authSubmitButton.textContent = 'Login';
+            } else {
+                authSubmitButton.textContent = 'Register';
+            }
         }
     }
 
@@ -132,14 +123,10 @@ document.addEventListener('DOMContentLoaded', () => {
         authForm.addEventListener('submit', handleAuthFormSubmit);
     }
 
-    /**
-     * Handles user logout.
-     */
     function handleLogout() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('userEmail');
         updateNav(false);
-        // Redirect to home page or login page if currently on a protected page
         if (window.location.pathname.includes('dashboard.html')) {
             window.location.href = '/index.html';
         }
@@ -155,15 +142,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-
-    // Initial check for authentication status on page load
     const token = localStorage.getItem('authToken');
     const userEmail = localStorage.getItem('userEmail');
     if (token && userEmail) {
-        // TODO: Optionally verify token with a lightweight backend call here
-        // For now, assume token is valid if present
         updateNav(true, userEmail);
     } else {
         updateNav(false);
     }
+    // Call updateAuthMode once initially to set up the toggle link listener correctly
+    // if the modal might be visible on load (though it's initially hidden).
+    // This is more for robustness if the initial HTML for the toggle is ever removed.
+    updateAuthMode(); 
 });

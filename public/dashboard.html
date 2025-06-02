@@ -1,71 +1,105 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="antialiased">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Dashboard - Smart Study</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-    <header>
-        <div class="container">
-            <h1>Smart Study AI - Dashboard</h1>
-            <nav><a href="index.html">Home (New Upload)</a><button id="logoutButton">Logout</button></nav>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans">
+    <header class="bg-white shadow-md sticky top-0 z-50">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center py-3 sm:py-4">
+            <h1 class="text-2xl sm:text-3xl font-bold text-indigo-600">Smart Study AI - Dashboard</h1>
+            <nav class="space-x-2 sm:space-x-3 mt-2 sm:mt-0">
+                <a href="index.html" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-indigo-600 hover:text-indigo-800 bg-indigo-100 hover:bg-indigo-200 rounded-lg transition duration-150">Home (New Upload)</a>
+                <button id="logoutButton" class="px-3 sm:px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 transition duration-150">Logout</button>
+            </nav>
         </div>
     </header>
-    <main class="container">
-        <h2>My Saved Study Sessions</h2>
-        <div id="sessionsList" class="sessions-grid"><p id="loadingSessions">Loading...</p></div>
-        <div id="sessionDetailModal" class="modal hidden">
-            <div class="modal-content large">
-                <span class="close-button" id="closeSessionDetailModalButton">&times;</span>
-                <h3 id="sessionModalTitle">Session Details</h3>
-                <div class="session-meta">
-                    <p><strong>Original File:</strong> <span id="modalOriginalFilename"></span></p>
-                    <p><strong>Created:</strong> <span id="modalCreatedAt"></span></p>
-                    <p><strong>Last Updated:</strong> <span id="modalUpdatedAt"></span></p>
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
+        <h2 class="text-2xl sm:text-3xl font-semibold text-slate-800 mb-6 sm:mb-8">My Saved Study Sessions</h2>
+        <div id="sessionsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+            <p id="loadingSessions" class="text-slate-600 col-span-full text-center py-5 text-sm">Loading...</p>
+        </div>
+        
+        <div id="sessionDetailModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+            <div class="modal-content bg-white p-5 sm:p-8 rounded-xl shadow-2xl w-full max-w-3xl transform transition-all duration-300 ease-out scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100 max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-start mb-4 sm:mb-6">
+                    <h3 id="sessionModalTitle" class="text-xl sm:text-2xl font-semibold text-slate-800">Session Details</h3>
+                    <button id="closeSessionDetailModalButton" class="text-slate-400 hover:text-slate-600 text-3xl leading-none -mt-1 focus:outline-none">&times;</button>
                 </div>
-                <div class="tabs">
-                    <button class="tab-link active" data-tab="modalSummaryTab">Summary</button>
+
+                <div class="session-meta mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-slate-200 text-xs sm:text-sm text-slate-600 space-y-1">
+                    <p><strong>Original File:</strong> <span id="modalOriginalFilename" class="text-slate-800 font-medium"></span></p>
+                    <p><strong>Created:</strong> <span id="modalCreatedAt" class="text-slate-800"></span></p>
+                    <p><strong>Last Updated:</strong> <span id="modalUpdatedAt" class="text-slate-800"></span></p>
+                </div>
+
+                <div class="tabs mb-4 sm:mb-6 border-b border-slate-300 flex flex-wrap -mb-px">
+                    <button class="tab-link" data-tab="modalSummaryTab">Summary</button>
                     <button class="tab-link" data-tab="modalFlashcardsTab">Flashcards</button>
                     <button class="tab-link" data-tab="modalQuizTab">Quiz</button>
                     <button class="tab-link" data-tab="modalOriginalTextTab">Original Text</button>
                 </div>
-                <div id="modalSummaryTab" class="tab-content active">
-                    <h4>Summary <small id="modalExplainInstruction" class="hidden explain-instruction">(Select text to explain)</small></h4>
-                    <div class="actions">
-                         <button id="modalExplainSelectedSummaryTextButton" class="utility-button hidden" title="Explain selected text">Explain Selection</button>
-                    </div>
-                    <div id="modalSummaryOutput" class="output-box"></div>
-                    <div id="modalExplanationOutput" class="output-box hidden" style="margin-top: 1rem; border-color: #3498db;"></div>
-                </div>
-                <div id="modalFlashcardsTab" class="tab-content"><h4>Flashcards</h4><div id="modalFlashcardsOutput" class="output-box flashcards-container"></div></div>
-                <div id="modalQuizTab" class="tab-content"><h4>Quiz</h4><div id="modalQuizOutput" class="output-box quiz-container"></div></div>
-                <div id="modalOriginalTextTab" class="tab-content"><h4>Original Extracted Text</h4><pre id="modalOriginalTextOutput" class="output-box"></pre></div>
-                <div class="modal-actions">
-                    <button id="regenerateButton">Regenerate Content</button>
-                    <div id="regenerateOptions" class="hidden">
-                        <p>Select formats to regenerate:</p>
-                        <label><input type="checkbox" name="regenOutputFormat" value="summary" data-controls="modalSummaryRegenOptions"> Summary</label>
-                        <label><input type="checkbox" name="regenOutputFormat" value="flashcards"> Flashcards</label>
-                        <label><input type="checkbox" name="regenOutputFormat" value="quiz"> Quiz</label>
-                        <div id="modalSummaryRegenOptions" class="options-group hidden">
-                            <h5>Summary Regeneration Options:</h5>
-                            <div><p>Length:</p><label><input type="radio" name="modalSummaryLength" value="short"> Short</label><label><input type="radio" name="modalSummaryLength" value="medium" checked> Medium</label><label><input type="radio" name="modalSummaryLength" value="long"> Long</label></div>
-                            <div><p>Style:</p><label><input type="radio" name="modalSummaryStyle" value="paragraph" checked> Paragraph</label><label><input type="radio" name="modalSummaryStyle" value="bullets"> Bullet Points</label></div>
-                            <div><label for="modalSummaryKeywords">Keywords to Focus On (optional):</label><input type="text" id="modalSummaryKeywords" placeholder="e.g., concept1, term2"></div>
-                            <div><label for="modalSummaryAudience">Audience/Purpose (optional):</label><select id="modalSummaryAudience"><option value="">Default</option><option value="quick review">For Quick Review</option><option value="deep understanding">For Deep Understanding</option><option value="explain to a beginner">To Explain to a Beginner</option><option value="presentation outline">As a Presentation Outline</option></select></div>
-                            <div><label for="modalSummaryNegativeKeywords">Keywords/Topics to Exclude (optional):</label><input type="text" id="modalSummaryNegativeKeywords" placeholder="e.g., dates, specific examples"></div>
+                
+                <div class="flex-grow overflow-y-auto pr-1 sm:pr-2 space-y-6 -mr-2 sm:-mr-3">
+                    <div id="modalSummaryTab" class="tab-content">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3">
+                             <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-2 sm:mb-0">Summary <small id="modalExplainInstruction" class="hidden text-xs text-slate-500 font-normal">(Select text to explain)</small></h4>
+                             <button id="modalExplainSelectedSummaryTextButton" class="hidden self-start sm:self-center px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 transition duration-150">Explain</button>
                         </div>
-                        <button id="confirmRegenerateButton">Confirm Regeneration</button>
-                        <p id="regenerateStatus"></p>
+                        <div id="modalSummaryOutput" class="output-box prose prose-sm sm:prose-base max-w-none"></div>
+                        <div id="modalExplanationOutput" class="output-box prose prose-sm sm:prose-base max-w-none bg-sky-50 border-sky-200 mt-4 hidden"></div>
                     </div>
-                    <button id="deleteSessionButton" class="danger">Delete Session</button>
+                    <div id="modalFlashcardsTab" class="tab-content hidden">
+                        <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Flashcards</h4>
+                        <div id="modalFlashcardsOutput" class="output-box flashcards-container grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"></div>
+                    </div>
+                    <div id="modalQuizTab" class="tab-content hidden">
+                        <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Quiz</h4>
+                        <div id="modalQuizOutput" class="output-box quiz-container space-y-4"></div>
+                    </div>
+                    <div id="modalOriginalTextTab" class="tab-content hidden">
+                        <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Original Extracted Text</h4>
+                        <pre id="modalOriginalTextOutput" class="output-box bg-slate-50 p-3 sm:p-4 rounded-lg shadow-inner text-xs whitespace-pre-wrap break-all"></pre>
+                    </div>
+                </div>
+
+                <div class="modal-actions mt-6 pt-4 sm:pt-6 border-t border-slate-200 space-y-4">
+                    <div>
+                        <button id="regenerateButton" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 transition duration-150">Regenerate Content</button>
+                        <div id="regenerateOptions" class="hidden mt-3 sm:mt-4 p-3 sm:p-4 bg-slate-50 rounded-lg shadow-inner space-y-3 sm:space-y-4 border border-slate-200">
+                            <p class="text-xs sm:text-sm font-medium text-slate-700">Select formats to regenerate:</p>
+                            <div class="flex flex-wrap gap-x-3 sm:gap-x-4 gap-y-2">
+                                <label class="flex items-center space-x-1.5 text-xs sm:text-sm"><input type="checkbox" name="regenOutputFormat" value="summary" data-controls="modalSummaryRegenOptions" class="form-checkbox h-3.5 w-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span>Summary</span></label>
+                                <label class="flex items-center space-x-1.5 text-xs sm:text-sm"><input type="checkbox" name="regenOutputFormat" value="flashcards" class="form-checkbox h-3.5 w-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span>Flashcards</span></label>
+                                <label class="flex items-center space-x-1.5 text-xs sm:text-sm"><input type="checkbox" name="regenOutputFormat" value="quiz" class="form-checkbox h-3.5 w-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span>Quiz</span></label>
+                            </div>
+                            <div id="modalSummaryRegenOptions" class="options-group hidden mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-200 space-y-2 sm:space-y-3">
+                                <h5 class="text-xs sm:text-sm font-semibold text-slate-700">Summary Regeneration Options:</h5>
+                                <div><p class="text-xs font-medium text-slate-600 mb-1">Length:</p><div class="flex gap-2"><label class="text-xs flex items-center"><input type="radio" name="modalSummaryLength" value="short" class="form-radio h-3 w-3 text-indigo-600"> Short</label><label class="text-xs flex items-center"><input type="radio" name="modalSummaryLength" value="medium" checked class="form-radio h-3 w-3 text-indigo-600"> Medium</label><label class="text-xs flex items-center"><input type="radio" name="modalSummaryLength" value="long" class="form-radio h-3 w-3 text-indigo-600"> Long</label></div></div>
+                                <div><p class="text-xs font-medium text-slate-600 mb-1">Style:</p><div class="flex gap-2"><label class="text-xs flex items-center"><input type="radio" name="modalSummaryStyle" value="paragraph" checked class="form-radio h-3 w-3 text-indigo-600"> Paragraph</label><label class="text-xs flex items-center"><input type="radio" name="modalSummaryStyle" value="bullets" class="form-radio h-3 w-3 text-indigo-600"> Bullets</label></div></div>
+                                <div><label for="modalSummaryKeywords" class="text-xs font-medium text-slate-600 mb-0.5 block">Keywords (opt):</label><input type="text" id="modalSummaryKeywords" placeholder="e.g., concept1" class="form-input w-full text-xs p-1.5 border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"></div>
+                                <div><label for="modalSummaryAudience" class="text-xs font-medium text-slate-600 mb-0.5 block">Audience (opt):</label><select id="modalSummaryAudience" class="form-select w-full text-xs p-1.5 border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white"><option value="">Default</option><option value="quick review">Quick Review</option><option value="deep understanding">Deep Understanding</option></select></div>
+                                <div><label for="modalSummaryNegativeKeywords" class="text-xs font-medium text-slate-600 mb-0.5 block">Exclude (opt):</label><input type="text" id="modalSummaryNegativeKeywords" placeholder="e.g., dates" class="form-input w-full text-xs p-1.5 border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"></div>
+                            </div>
+                            <button id="confirmRegenerateButton" class="px-3 sm:px-4 py-1 sm:py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-green-400 transition duration-150">Confirm Regeneration</button>
+                            <p id="regenerateStatus" class="text-xs mt-2"></p>
+                        </div>
+                    </div>
+                    <button id="deleteSessionButton" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-red-400 transition duration-150">Delete Session</button>
                 </div>
             </div>
         </div>
     </main>
-    <footer><div class="container"><p>&copy; <span id="currentYearDashboard"></span> Smart Study AI.</p></div></footer>
-    <script src="js/api.js"></script><script src="js/ui.js"></script><script src="js/dashboard_app.js"></script>
+    <footer class="bg-slate-800 text-slate-300 text-center py-6 mt-auto text-sm">
+        <div class="container mx-auto px-4"><p>&copy; <span id="currentYearDashboard"></span> Smart Study AI.</p></div>
+    </footer>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/dashboard_app.js"></script>
 </body>
 </html>

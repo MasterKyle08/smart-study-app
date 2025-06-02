@@ -1,8 +1,3 @@
-/**
- * @file public/js/upload.js
- * @description Handles file uploads, drag-and-drop, and client-side text extraction (OCR/PDF).
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
@@ -13,11 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let filesToProcess = []; 
 
     if (!dropZone || !fileInput || !processButton || !filePreviewContainer || !summaryOptionsGroup) {
-        console.error('One or more essential upload UI elements are missing from the DOM.');
         return;
     }
 
-    // Toggle visibility of summary options based on whether 'summary' or 'all' is checked
     const outputFormatCheckboxes = document.querySelectorAll('input[name="outputFormat"]');
     function toggleSummaryOptionsVisibility() {
         const summarySelected = document.querySelector('input[name="outputFormat"][value="summary"]').checked;
@@ -25,22 +18,23 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryOptionsGroup.classList.toggle('hidden', !(summarySelected || allSelected));
     }
     outputFormatCheckboxes.forEach(checkbox => checkbox.addEventListener('change', toggleSummaryOptionsVisibility));
-    toggleSummaryOptionsVisibility(); // Initial check
+    toggleSummaryOptionsVisibility();
 
-
-    // --- Drag and Drop ---
     dropZone.addEventListener('dragover', (event) => {
         event.preventDefault();
-        dropZone.classList.add('dragover');
+        dropZone.classList.add('border-indigo-600', 'bg-indigo-100');
+        dropZone.classList.remove('border-indigo-400', 'bg-indigo-50');
     });
 
     dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
+        dropZone.classList.remove('border-indigo-600', 'bg-indigo-100');
+        dropZone.classList.add('border-indigo-400', 'bg-indigo-50');
     });
 
     dropZone.addEventListener('drop', (event) => {
         event.preventDefault();
-        dropZone.classList.remove('dragover');
+        dropZone.classList.remove('border-indigo-600', 'bg-indigo-100');
+        dropZone.classList.add('border-indigo-400', 'bg-indigo-50');
         const droppedFiles = Array.from(event.dataTransfer.files);
         handleFiles(droppedFiles);
     });
@@ -52,13 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', (event) => {
         const selectedFiles = Array.from(event.target.files);
         handleFiles(selectedFiles);
-        fileInput.value = ''; // Reset file input to allow re-selecting the same file
+        fileInput.value = '';
     });
 
-    /**
-     * Handles selected/dropped files, validates them, and adds to the processing queue.
-     * @param {File[]} newFiles - Array of File objects.
-     */
     function handleFiles(newFiles) {
         newFiles.forEach(file => {
             if (isValidFile(file)) {
@@ -75,20 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateProcessButtonState();
     }
 
-    /**
-     * Validates a single file based on type and size.
-     * @param {File} file - The file to validate.
-     * @returns {boolean} True if valid, false otherwise.
-     */
     function isValidFile(file) {
         const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'text/plain'];
-        const maxSize = 10 * 1024 * 1024; // 10MB
+        const maxSize = 10 * 1024 * 1024; 
         return allowedTypes.includes(file.type) && file.size <= maxSize;
     }
 
-    /**
-     * Renders previews of the files staged for processing.
-     */
     function renderFilePreviews() {
         filePreviewContainer.innerHTML = '';
         if (filesToProcess.length === 0) {
@@ -98,12 +80,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         filesToProcess.forEach((file, index) => {
             const fileDiv = document.createElement('div');
-            fileDiv.className = 'file-preview-item';
+            fileDiv.className = 'bg-slate-100 p-3 rounded-md shadow flex justify-between items-center text-sm text-slate-700';
             fileDiv.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
             
             const removeButton = document.createElement('button');
-            removeButton.innerHTML = '&times;'; // Close icon
+            removeButton.innerHTML = '&times;';
             removeButton.title = 'Remove file';
+            removeButton.className = 'ml-3 text-red-500 hover:text-red-700 text-xl leading-none focus:outline-none';
             removeButton.addEventListener('click', () => {
                 filesToProcess.splice(index, 1);
                 renderFilePreviews();
@@ -116,20 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
         filePreviewContainer.classList.remove('hidden');
     }
 
-    /**
-     * Enables or disables the process button based on whether files are staged.
-     */
     function updateProcessButtonState() {
         processButton.disabled = filesToProcess.length === 0;
     }
 
-
-    /**
-     * Extracts text from a single file.
-     * @param {File} file - The file to process.
-     * @returns {Promise<string>} A promise that resolves with the extracted text.
-     * @throws {Error} If text extraction fails.
-     */
     async function extractTextFromFile(file) {
         showProcessingStatus(`Extracting text from ${file.name}...`, true);
         
@@ -159,7 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         resolve(fullText);
                     } catch (err) {
-                        console.error("Error processing PDF: ", err);
                         reject(new Error('Error processing PDF file. It might be corrupted or password-protected.'));
                     }
                 };
@@ -172,12 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             try {
                 showProcessingStatus(`Initializing OCR for ${file.name}...`, true);
-
-                // Add logger and explicit language loading/initialization
                 const worker = await Tesseract.createWorker({
                     logger: m => {
-                        console.log('[Tesseract Logger]', m); // Log everything
-                        // Update status based on logger messages
                         if (m.status === 'recognizing text') {
                             const progress = (m.progress * 100).toFixed(0);
                             showProcessingStatus(`OCR: Recognizing text ${progress}%...`, true);
@@ -186,30 +154,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 });
-
                 showProcessingStatus(`Loading language model (English) for ${file.name}...`, true);
                 await worker.loadLanguage('eng');
                 await worker.initialize('eng');
-
                 showProcessingStatus(`Performing OCR on ${file.name}...`, true);
                 const { data: { text } } = await worker.recognize(file);
-                
                 showProcessingStatus(`Terminating OCR worker for ${file.name}...`, true);
                 await worker.terminate();
-                
                 return text;
-
             } catch (err) {
-                console.error("Error during OCR: ", err); 
-                console.error("Full OCR error object:", err); 
-
                 let errorMessage = 'Error performing OCR on image.';
                 if (err instanceof Error) {
                     errorMessage += ` Details: ${err.message}`;
                 } else if (typeof err === 'string') {
                     errorMessage += ` Details: ${err}`;
                 }
-                
                 throw new Error(errorMessage);
             }
         } else {
@@ -217,23 +176,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Handles the click event of the "Process Files" button.
-     */
     processButton.addEventListener('click', async () => {
         if (filesToProcess.length === 0) {
             showMessage('processingStatus', 'Please add files to process.', 'error');
             return;
         }
-
-        const outputFormats = Array.from(document.querySelectorAll('input[name="outputFormat"]:checked'))
-                                 .map(cb => cb.value);
+        const outputFormats = Array.from(document.querySelectorAll('input[name="outputFormat"]:checked')).map(cb => cb.value);
         if (outputFormats.length === 0) {
             showMessage('processingStatus', 'Please select at least one output format.', 'error');
             return;
         }
         
-        // Get summary preferences
         const summaryLengthPreference = document.querySelector('input[name="summaryLength"]:checked')?.value || 'medium';
         const summaryStylePreference = document.querySelector('input[name="summaryStyle"]:checked')?.value || 'paragraph';
         const summaryKeywords = document.getElementById('summaryKeywords').value.trim();
@@ -242,14 +195,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         processButton.disabled = true;
         showProcessingStatus('Starting processing...', true);
-        document.getElementById('resultsSection').classList.add('hidden'); // Hide old results
+        document.getElementById('resultsSection').classList.add('hidden');
         clearMessage('processingStatus'); 
-        const explanationOutput = document.getElementById('explanationOutput'); // Ensure this element exists
+        const explanationOutput = document.getElementById('explanationOutput');
         if(explanationOutput) {
-             explanationOutput.classList.add('hidden'); // Hide previous explanations
+             explanationOutput.classList.add('hidden');
              explanationOutput.innerHTML = '';
         }
-
 
         let combinedText = '';
         let firstFileName = filesToProcess.length > 0 ? filesToProcess[0].name : "document";
@@ -263,14 +215,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (combinedText.trim() === "") {
                 showMessage('processingStatus', 'No text could be extracted from the selected file(s).', 'error');
-                processButton.disabled = false; // Re-enable button
+                processButton.disabled = false;
                 return;
             }
             
             showProcessingStatus('Text extracted. Generating materials with AI...', true);
-            
-            // Store keywords for highlighting globally (simple approach)
-            // This allows ui.js to access them without needing to pass them through `results`
             window.currentKeywordsForHighlighting = summaryKeywords.split(',').map(k => k.trim()).filter(k => k);
 
             const results = await apiProcessContent(
@@ -284,22 +233,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 summaryAudiencePurpose,
                 summaryNegativeKeywords 
             );
-
             displayResults(results); 
             hideProcessingStatus();
             filesToProcess = []; 
             renderFilePreviews();
-
         } catch (error) {
-            console.error('Processing error:', error);
             const message = error.data?.message || error.message || 'An error occurred during processing.';
             showMessage('processingStatus', message, 'error');
-            hideProcessingStatus(); // Ensure spinner is hidden on error too
+            hideProcessingStatus();
         } finally {
             updateProcessButtonState(); 
         }
     });
-
-    // Initial state
     updateProcessButtonState();
 });

@@ -5,8 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "init-db": "node ./backend/models/db.js init"
+    "dev": "concurrently \"nodemon server.js\" \"npm run tailwind:watch\"",
+    "init-db": "node ./backend/models/db.js init",
+    "tailwind:build": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css --minify",
+    "tailwind:watch": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css --watch"
   },
   "keywords": [
     "study",
@@ -19,6 +21,8 @@
   "author": "AI Developer",
   "license": "MIT",
   "dependencies": {
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.16",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -30,6 +34,10 @@
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.2",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3"
   }
 }

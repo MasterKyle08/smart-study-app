@@ -1,142 +1,170 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="antialiased">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Study - AI Powered Learning</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js'></script>
 </head>
-<body>
-    <header>
-        <div class="container">
-            <h1>Smart Study AI</h1>
-            <nav>
-                <button id="loginNavButton">Login</button>
-                <button id="registerNavButton">Register</button>
-                <button id="dashboardNavButton" class="hidden">Dashboard</button>
-                <button id="logoutNavButton" class="hidden">Logout</button>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans">
+    <header class="bg-white shadow-md sticky top-0 z-50">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center py-3 sm:py-4">
+            <h1 class="text-2xl sm:text-3xl font-bold text-indigo-600">Smart Study AI</h1>
+            <nav class="space-x-1.5 sm:space-x-2 mt-2 sm:mt-0">
+                <button id="loginNavButton" class="px-3 sm:px-5 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition duration-150 ease-in-out">Login</button>
+                <button id="registerNavButton" class="px-3 sm:px-5 py-2 sm:py-2.5 bg-green-500 hover:bg-green-600 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75 transition duration-150 ease-in-out">Register</button>
+                <button id="dashboardNavButton" class="hidden px-3 sm:px-5 py-2 sm:py-2.5 bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-75 transition duration-150 ease-in-out">Dashboard</button>
+                <button id="logoutNavButton" class="hidden px-3 sm:px-5 py-2 sm:py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 transition duration-150 ease-in-out">Logout</button>
             </nav>
         </div>
     </header>
 
-    <main class="container">
-        <section id="userActions" class="hidden">
-            <p>Welcome, <span id="userEmail"></span>!</p>
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
+        <section id="userActions" class="hidden mb-8 p-4 bg-indigo-100 border border-indigo-300 rounded-lg shadow-sm">
+            <p class="text-indigo-700 text-sm">Welcome, <span id="userEmail" class="font-semibold"></span>!</p>
         </section>
 
-        <section id="uploadSection">
-            <h2>Upload Your Study Material</h2>
-            <p>Upload JPG, PNG, PDF, or TXT files. Max 10MB.</p>
-            <div id="dropZone" class="drop-zone">
-                <p>Drag & drop files here or click to select</p>
-                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf,.txt" multiple style="display: none;">
-            </div>
-            <div id="filePreviewContainer"></div>
+        <section id="uploadSection" class="bg-white p-6 md:p-8 rounded-xl shadow-xl mb-12">
+            <h2 class="text-2xl sm:text-3xl font-semibold text-slate-800 mb-2 text-center sm:text-left">Upload Your Study Material</h2>
+            <p class="text-slate-600 mb-6 text-sm text-center sm:text-left">Upload JPG, PNG, PDF, or TXT files. Max 10MB.</p>
             
-            <div class="options-group">
-                <h3>Select Output Formats:</h3>
-                <label><input type="checkbox" name="outputFormat" value="summary" checked> Summary</label>
-                <label><input type="checkbox" name="outputFormat" value="flashcards"> Flashcards</label>
-                <label><input type="checkbox" name="outputFormat" value="quiz"> Quiz</label>
-                <label><input type="checkbox" name="outputFormat" value="all"> All</label>
+            <div id="dropZone" class="border-2 border-dashed border-indigo-400 rounded-xl p-8 sm:p-12 text-center cursor-pointer bg-indigo-50 hover:bg-indigo-100 transition duration-200 ease-in-out mb-6">
+                <p class="text-slate-600 text-base sm:text-lg">Drag & drop files here or <span class="text-indigo-600 font-semibold">click to select</span></p>
+                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf,.txt" multiple class="hidden">
             </div>
-
-            <div id="summaryOptionsGroup" class="options-group hidden">
-                <h3>Summary Options (if summary or all is selected):</h3>
-                <div>
-                    <p>Length:</p>
-                    <label><input type="radio" name="summaryLength" value="short"> Short</label>
-                    <label><input type="radio" name="summaryLength" value="medium" checked> Medium</label>
-                    <label><input type="radio" name="summaryLength" value="long"> Long</label>
-                </div>
-                <div style="margin-top: 0.5rem;">
-                    <p>Style:</p>
-                    <label><input type="radio" name="summaryStyle" value="paragraph" checked> Paragraph</label>
-                    <label><input type="radio" name="summaryStyle" value="bullets"> Bullet Points</label>
-                </div>
-                <div style="margin-top: 0.5rem;">
-                    <label for="summaryKeywords">Keywords to Focus On (comma-separated, optional):</label>
-                    <input type="text" id="summaryKeywords" name="summaryKeywords" placeholder="e.g., mitosis, cell division">
-                </div>
-                <div style="margin-top: 0.5rem;">
-                    <label for="summaryAudiencePurpose">Audience/Purpose (optional):</label>
-                    <select id="summaryAudiencePurpose" name="summaryAudiencePurpose">
-                        <option value="">Default</option>
-                        <option value="quick review">For Quick Review</option>
-                        <option value="deep understanding">For Deep Understanding</option>
-                        <option value="explain to a beginner">To Explain to a Beginner</option>
-                        <option value="presentation outline">As a Presentation Outline</option>
-                    </select>
-                </div>
-                <div style="margin-top: 0.5rem;">
-                    <label for="summaryNegativeKeywords">Keywords/Topics to Exclude (comma-separated, optional):</label>
-                    <input type="text" id="summaryNegativeKeywords" name="summaryNegativeKeywords" placeholder="e.g., specific dates, minor details">
+            <div id="filePreviewContainer" class="mb-6 space-y-2"></div>
+            
+            <div class="options-group bg-slate-50 p-5 sm:p-6 rounded-lg shadow-inner mb-6 border border-slate-200">
+                <h3 class="text-lg sm:text-xl font-semibold text-slate-700 mb-4">Select Output Formats:</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                    <label class="flex items-center space-x-2 p-3 bg-white rounded-lg shadow-sm border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer"><input type="checkbox" name="outputFormat" value="summary" checked class="form-checkbox h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-sm">Summary</span></label>
+                    <label class="flex items-center space-x-2 p-3 bg-white rounded-lg shadow-sm border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer"><input type="checkbox" name="outputFormat" value="flashcards" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-sm">Flashcards</span></label>
+                    <label class="flex items-center space-x-2 p-3 bg-white rounded-lg shadow-sm border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer"><input type="checkbox" name="outputFormat" value="quiz" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-sm">Quiz</span></label>
+                    <label class="flex items-center space-x-2 p-3 bg-white rounded-lg shadow-sm border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer"><input type="checkbox" name="outputFormat" value="all" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-sm">All</span></label>
                 </div>
             </div>
 
-            <button id="processButton" disabled>Process Files</button>
-            <div id="processingStatus"></div>
+            <div id="summaryOptionsGroup" class="options-group bg-slate-50 p-5 sm:p-6 rounded-lg shadow-inner mb-8 hidden border border-slate-200">
+                <h3 class="text-lg sm:text-xl font-semibold text-slate-700 mb-5">Summary Options:</h3>
+                <div class="space-y-5">
+                    <div>
+                        <p class="text-slate-600 font-medium mb-2 text-sm">Length:</p>
+                        <div class="flex flex-wrap gap-2 sm:gap-3">
+                            <label class="flex items-center space-x-1.5 p-2 px-3 bg-white rounded-md shadow-sm border border-slate-200 hover:border-indigo-400 cursor-pointer"><input type="radio" name="summaryLength" value="short" class="form-radio h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-xs sm:text-sm">Short</span></label>
+                            <label class="flex items-center space-x-1.5 p-2 px-3 bg-white rounded-md shadow-sm border border-slate-200 hover:border-indigo-400 cursor-pointer"><input type="radio" name="summaryLength" value="medium" checked class="form-radio h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-xs sm:text-sm">Medium</span></label>
+                            <label class="flex items-center space-x-1.5 p-2 px-3 bg-white rounded-md shadow-sm border border-slate-200 hover:border-indigo-400 cursor-pointer"><input type="radio" name="summaryLength" value="long" class="form-radio h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-xs sm:text-sm">Long</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-slate-600 font-medium mb-2 text-sm">Style:</p>
+                        <div class="flex flex-wrap gap-2 sm:gap-3">
+                            <label class="flex items-center space-x-1.5 p-2 px-3 bg-white rounded-md shadow-sm border border-slate-200 hover:border-indigo-400 cursor-pointer"><input type="radio" name="summaryStyle" value="paragraph" checked class="form-radio h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-xs sm:text-sm">Paragraph</span></label>
+                            <label class="flex items-center space-x-1.5 p-2 px-3 bg-white rounded-md shadow-sm border border-slate-200 hover:border-indigo-400 cursor-pointer"><input type="radio" name="summaryStyle" value="bullets" class="form-radio h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"> <span class="text-slate-700 text-xs sm:text-sm">Bullet Points</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="summaryKeywords" class="block text-slate-600 font-medium mb-1.5 text-sm">Keywords to Focus On <span class="text-xs text-slate-500">(optional, comma-separated)</span>:</label>
+                        <input type="text" id="summaryKeywords" name="summaryKeywords" placeholder="e.g., mitosis, cell division" class="form-input mt-1 block w-full px-3 py-2 bg-white border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label for="summaryAudiencePurpose" class="block text-slate-600 font-medium mb-1.5 text-sm">Audience/Purpose <span class="text-xs text-slate-500">(optional)</span>:</label>
+                        <select id="summaryAudiencePurpose" name="summaryAudiencePurpose" class="form-select mt-1 block w-full pl-3 pr-10 py-2 bg-white border-slate-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                            <option value="">Default</option>
+                            <option value="quick review">For Quick Review</option>
+                            <option value="deep understanding">For Deep Understanding</option>
+                            <option value="explain to a beginner">To Explain to a Beginner</option>
+                            <option value="presentation outline">As a Presentation Outline</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label for="summaryNegativeKeywords" class="block text-slate-600 font-medium mb-1.5 text-sm">Keywords/Topics to Exclude <span class="text-xs text-slate-500">(optional, comma-separated)</span>:</label>
+                        <input type="text" id="summaryNegativeKeywords" name="summaryNegativeKeywords" placeholder="e.g., specific dates, minor details" class="form-input mt-1 block w-full px-3 py-2 bg-white border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-center">
+                <button id="processButton" disabled class="w-full sm:w-auto mt-2 px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-lg disabled:bg-slate-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75 transition duration-150 ease-in-out text-base sm:text-lg">Process Files</button>
+            </div>
+            <div id="processingStatus" class="mt-6 text-center text-sm"></div>
         </section>
 
-        <section id="resultsSection" class="hidden">
-            <h2>Generated Materials</h2>
-            <div class="tabs">
-                <button class="tab-link active" data-tab="summaryTab">Summary</button>
+        <section id="resultsSection" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-xl">
+            <h2 class="text-2xl sm:text-3xl font-semibold text-slate-800 mb-6 sm:mb-8 text-center sm:text-left">Generated Materials</h2>
+            <div class="tabs mb-6 sm:mb-8 border-b border-slate-300 flex flex-wrap -mb-px">
+                <button class="tab-link" data-tab="summaryTab">Summary</button>
                 <button class="tab-link" data-tab="flashcardsTab">Flashcards</button>
                 <button class="tab-link" data-tab="quizTab">Quiz</button>
             </div>
 
-            <div id="summaryTab" class="tab-content active">
-                <h3>Summary <small id="explainInstruction" class="hidden explain-instruction">(Select text in the summary to get an explanation)</small></h3>
-                <div class="actions">
-                    <button id="explainSelectedSummaryTextButton" class="utility-button hidden" title="Explain selected text">Explain Selection</button>
-                    <button class="copy-button" data-target="summaryOutput">Copy Summary</button>
-                    <button class="download-button" data-target="summaryOutput" data-filename="summary.txt">Download Summary</button>
+            <div id="summaryTab" class="tab-content">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                    <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-2 sm:mb-0">Summary <small id="explainInstruction" class="hidden text-xs sm:text-sm text-slate-500 font-normal">(Select text to explain)</small></h3>
+                    <div class="actions space-x-2 flex-shrink-0">
+                        <button id="explainSelectedSummaryTextButton" class="hidden px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 transition duration-150">Explain</button>
+                        <button class="copy-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="summaryOutput">Copy</button>
+                        <button class="download-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="summaryOutput" data-filename="summary.txt">Download</button>
+                    </div>
                 </div>
-                <div id="summaryOutput" class="output-box"></div>
-                <div id="explanationOutput" class="output-box hidden" style="margin-top: 1rem; border-color: #3498db;"></div>
+                <div id="summaryOutput" class="output-box prose prose-sm sm:prose-base max-w-none"></div>
+                <div id="explanationOutput" class="output-box prose prose-sm sm:prose-base max-w-none bg-sky-50 border-sky-200 mt-6 hidden"></div>
             </div>
 
-            <div id="flashcardsTab" class="tab-content">
-                <h3>Flashcards</h3>
-                <div class="actions">
-                    <button class="copy-button" data-target="flashcardsOutput">Copy Flashcards (JSON)</button>
-                    <button class="download-button" data-target="flashcardsOutput" data-filename="flashcards.json">Download Flashcards (JSON)</button>
+            <div id="flashcardsTab" class="tab-content hidden">
+                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                    <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-2 sm:mb-0">Flashcards</h3>
+                    <div class="actions space-x-2 flex-shrink-0">
+                        <button class="copy-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="flashcardsOutput">Copy JSON</button>
+                        <button class="download-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="flashcardsOutput" data-filename="flashcards.json">Download JSON</button>
+                    </div>
                 </div>
-                <div id="flashcardsOutput" class="output-box flashcards-container"></div>
+                <div id="flashcardsOutput" class="output-box flashcards-container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
             </div>
 
-            <div id="quizTab" class="tab-content">
-                <h3>Quiz</h3>
-                 <div class="actions">
-                    <button class="copy-button" data-target="quizOutputStructured">Copy Quiz (JSON)</button>
-                    <button class="download-button" data-target="quizOutputStructured" data-filename="quiz.json">Download Quiz (JSON)</button>
+            <div id="quizTab" class="tab-content hidden">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                    <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-2 sm:mb-0">Quiz</h3>
+                    <div class="actions space-x-2 flex-shrink-0">
+                        <button class="copy-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="quizOutputStructured">Copy JSON</button>
+                        <button class="download-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="quizOutputStructured" data-filename="quiz.json">Download JSON</button>
+                    </div>
                 </div>
-                <div id="quizOutput" class="output-box quiz-container"></div>
-                <textarea id="quizOutputStructured" style="display:none;"></textarea> 
+                <div id="quizOutput" class="output-box quiz-container space-y-5"></div>
+                <textarea id="quizOutputStructured" class="hidden"></textarea> 
             </div>
         </section>
     </main>
 
-    <div id="authModal" class="modal hidden">
-        <div class="modal-content">
-            <span class="close-button" id="closeModalButton">&times;</span>
-            <h3 id="modalTitle">Login</h3>
-            <form id="authForm">
-                <div><label for="email">Email:</label><input type="email" id="email" name="email" required></div>
-                <div><label for="password">Password:</label><input type="password" id="password" name="password" required></div>
-                <button type="submit" id="authSubmitButton">Login</button>
-                <p id="authFormMessage"></p>
-                <p id="authFormToggle">Don't have an account? <a href="#" id="toggleToRegister">Register</a></p>
+    <div id="authModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+        <div class="modal-content bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 ease-out scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100">
+            <div class="flex justify-between items-start mb-6">
+                <h3 id="modalTitle" class="text-xl sm:text-2xl font-semibold text-slate-800">Login</h3>
+                <button id="closeModalButton" class="text-slate-400 hover:text-slate-600 text-3xl leading-none -mt-1 focus:outline-none">&times;</button>
+            </div>
+            <form id="authForm" class="space-y-5">
+                <div>
+                    <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email:</label>
+                    <input type="email" id="email" name="email" required placeholder="your@email.com" class="form-input mt-1 block w-full px-3 py-2 bg-white border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password:</label>
+                    <input type="password" id="password" name="password" required placeholder="••••••••" class="form-input mt-1 block w-full px-3 py-2 bg-white border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                </div>
+                <button type="submit" id="authSubmitButton" class="w-full px-6 py-2.5 sm:py-3 mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition duration-150 ease-in-out text-sm sm:text-base">Login</button>
+                <div id="authFormMessage" class="text-sm mt-3"></div>
+                <p id="authFormToggle" class="text-xs sm:text-sm text-center text-slate-600 mt-4">Don't have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Register</a></p>
             </form>
         </div>
     </div>
     
-    <footer>
-        <div class="container"><p>&copy; <span id="currentYear"></span> Smart Study AI. All rights reserved.</p></div>
+    <footer class="bg-slate-800 text-slate-300 text-center py-6 mt-auto text-sm">
+        <div class="container mx-auto px-4"><p>&copy; <span id="currentYear"></span> Smart Study AI. All rights reserved.</p></div>
     </footer>
 
     <script src="js/api.js"></script>
