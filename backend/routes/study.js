@@ -1,13 +1,8 @@
-/**
- * @file backend/routes/study.routes.js
- * @description Routes for study material generation and session management.
- */
-
 const express = require('express');
 const fileService = require('../services/file');
 const aiService = require('../services/ai'); 
 const Session = require('../models/Session');
-const authenticateToken = require('../middleware/auth'); // Still needed for other routes
+const authenticateToken = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -56,9 +51,21 @@ router.post('/process', async (req, res) => {
     });
     res.status(200).json(results);
   } catch (error) {
-    console.error('Error in /process route:', error);
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process content.' });
   }
+});
+
+router.post('/flashcard-interact', async (req, res) => {
+    try {
+        const { card, interactionType, userAnswer, userQuery, chatHistory } = req.body;
+        if (!card || !card.term || !card.definition || !interactionType) {
+            return res.status(400).json({ message: 'Missing required fields for flashcard interaction.' });
+        }
+        const result = await aiService.getFlashcardInteractionResponse(card, interactionType, userAnswer, userQuery, chatHistory);
+        res.status(200).json(result);
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process flashcard interaction.' });
+    }
 });
 
 router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
@@ -113,19 +120,11 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
     };
     res.status(200).json({ updatedSession: parsedUpdatedSession });
   } catch (error) {
-    console.error('Error regenerating session content:', error);
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to regenerate content.' });
   }
 });
 
-/**
- * @route POST /api/study/explain-snippet
- * @description Get an explanation for a text snippet.
- * @access Public (No authentication required)
- * @body {string} snippet - The text snippet to explain.
- * @returns {object} 200 - { explanation: "..." }
- */
-router.post('/explain-snippet', async (req, res) => { // AuthenticateToken middleware REMOVED
+router.post('/explain-snippet', async (req, res) => {
   try {
     const { snippet } = req.body;
     if (!snippet || typeof snippet !== 'string' || snippet.trim() === "") {
@@ -134,11 +133,9 @@ router.post('/explain-snippet', async (req, res) => { // AuthenticateToken middl
     if (snippet.length > 500) { 
         return res.status(400).json({ message: 'Snippet is too long. Please select a shorter text.'});
     }
-
     const explanation = await aiService.explainTextSnippet(snippet);
     res.status(200).json({ explanation });
   } catch (error) {
-    console.error('Error explaining snippet:', error);
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to explain snippet.' });
   }
 });
@@ -153,7 +150,6 @@ router.get('/sessions', authenticateToken, async (req, res) => {
     }));
     res.status(200).json({ sessions: parsedSessions });
   } catch (error) {
-    console.error('Error fetching user sessions:', error);
     res.status(500).json({ message: 'Failed to retrieve sessions.' });
   }
 });
@@ -172,7 +168,6 @@ router.get('/sessions/:id', authenticateToken, async (req, res) => {
     };
     res.status(200).json({ session: parsedSession });
   } catch (error) {
-    console.error('Error fetching session by ID:', error);
     res.status(500).json({ message: 'Failed to retrieve session.' });
   }
 });
@@ -184,7 +179,6 @@ router.delete('/sessions/:id', authenticateToken, async (req, res) => {
     await Session.deleteById(sessionId, req.user.id);
     res.status(200).json({ message: 'Session deleted successfully.' });
   } catch (error) {
-    console.error('Error deleting session:', error);
     if (error.message.includes('not found or user not authorized')) {
         return res.status(404).json({ message: error.message });
     }

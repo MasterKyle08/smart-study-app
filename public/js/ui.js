@@ -1,3 +1,5 @@
+console.log("Smart Study UI Script Loaded - Version: FLASHCARD_DEBUG_1.0");
+
 function showMessage(elementId, message, type = 'error') {
   const element = document.getElementById(elementId);
   if (element) {
@@ -22,15 +24,12 @@ function toggleElementVisibility(elementId, forceShow) {
     if (element) {
         const isModal = element.id === 'authModal' || element.id === 'sessionDetailModal';
         if (isModal) {
-            // For modals, we only toggle the data-visible attribute.
-            // The HTML structure and Tailwind classes handle the actual display and transitions.
             if (typeof forceShow === 'boolean') {
                 element.dataset.visible = forceShow ? 'true' : 'false';
-            } else { // Toggle logic
+            } else { 
                 element.dataset.visible = element.dataset.visible === 'true' ? 'false' : 'true';
             }
         } else { 
-            // For non-modal elements, toggle the 'hidden' class as before.
             if (typeof forceShow === 'boolean') {
                 element.classList.toggle('hidden', !forceShow);
             } else {
@@ -107,9 +106,10 @@ function processTextForDisplay(text, keywordsToHighlight = []) {
 }
 
 function displayResults(results) {
+    console.log("displayResults called. Results object:", results);
     const resultsSection = document.getElementById('resultsSection');
     const summaryOutput = document.getElementById('summaryOutput');
-    const flashcardsOutput = document.getElementById('flashcardsOutput');
+    const flashcardsOutputContainer = document.getElementById('flashcardsOutput');
     const quizOutput = document.getElementById('quizOutput');
     const quizOutputStructured = document.getElementById('quizOutputStructured');
     const explainButton = document.getElementById('explainSelectedSummaryTextButton'); 
@@ -117,15 +117,15 @@ function displayResults(results) {
     const explainInstruction = document.getElementById('explainInstruction'); 
 
     if (summaryOutput) summaryOutput.innerHTML = '';
-    if (flashcardsOutput) flashcardsOutput.innerHTML = '<p class="text-slate-500 text-sm">No flashcards generated.</p>';
-    if (quizOutput) quizOutput.innerHTML = '<p class="text-slate-500 text-sm">No quiz questions generated.</p>';
+    if (flashcardsOutputContainer) flashcardsOutputContainer.innerHTML = '<p class="text-slate-500 text-sm p-4">No flashcards generated.</p>';
+    if (quizOutput) quizOutput.innerHTML = '<p class="text-slate-500 text-sm p-4">No quiz questions generated.</p>';
     if (quizOutputStructured) quizOutputStructured.value = '';
     if (explainButton) explainButton.classList.add('hidden'); 
     if (explanationOutput) { explanationOutput.innerHTML = ''; explanationOutput.classList.add('hidden');}
     if (explainInstruction) explainInstruction.classList.add('hidden'); 
 
     document.querySelectorAll('#resultsSection .tab-content').forEach(tc => { tc.classList.add('hidden'); tc.removeAttribute('data-active'); });
-    document.querySelectorAll('#resultsSection .tab-link').forEach(tl => { /* don't hide tab links, just manage active state */ tl.removeAttribute('data-active'); });
+    document.querySelectorAll('#resultsSection .tab-link').forEach(tl => { tl.removeAttribute('data-active'); });
     
     let firstVisibleTab = null;
     const keywordsForHighlighting = window.currentKeywordsForHighlighting || results.summaryKeywords || [];
@@ -203,78 +203,57 @@ function displayResults(results) {
                 explainInstruction.classList.remove('hidden');
             }
         }
-        // No longer hiding tab links, just content
-        // document.querySelector('[data-tab="summaryTab"]')?.classList.remove('hidden');
-        // document.getElementById('summaryTab')?.classList.remove('hidden');
         if (!firstVisibleTab) firstVisibleTab = 'summaryTab';
     } else {
         if (explainInstruction) explainInstruction.classList.add('hidden');
     }
 
-    if (results.flashcards && results.flashcards.length > 0) {
-        if (flashcardsOutput) renderFlashcards(flashcardsOutput, results.flashcards, keywordsForHighlighting);
-        // document.querySelector('[data-tab="flashcardsTab"]')?.classList.remove('hidden');
-        // document.getElementById('flashcardsTab')?.classList.remove('hidden');
-         if (!firstVisibleTab) firstVisibleTab = 'flashcardsTab';
+    console.log("Checking flashcards in displayResults. results.flashcards:", results.flashcards);
+    if (results.flashcards && Array.isArray(results.flashcards) && results.flashcards.length > 0) {
+        console.log(`Attempting to render ${results.flashcards.length} interactive flashcards.`);
+        if (flashcardsOutputContainer) {
+            renderInteractiveFlashcards(flashcardsOutputContainer, results.flashcards, keywordsForHighlighting, 'main');
+        } else {
+            console.error("Flashcards output container not found!");
+        }
+        if (!firstVisibleTab) firstVisibleTab = 'flashcardsTab';
+    } else {
+        console.log("No valid flashcards data to render interactively.");
+        if (flashcardsOutputContainer) {
+             flashcardsOutputContainer.innerHTML = '<p class="text-slate-500 text-sm p-4">No flashcards available to display.</p>';
+        }
     }
+
 
     if (results.quiz) { 
         if (quizOutput) renderQuiz(quizOutput, results.quiz, keywordsForHighlighting); 
         if (quizOutputStructured && results.quiz && results.quiz.length > 0) { 
              quizOutputStructured.value = JSON.stringify(results.quiz, null, 2);
         }
-        // document.querySelector('[data-tab="quizTab"]')?.classList.remove('hidden');
-        // document.getElementById('quizTab')?.classList.remove('hidden');
         if (!firstVisibleTab) firstVisibleTab = 'quizTab';
     }
     
-    // Ensure all tab links are visible
     document.querySelectorAll('#resultsSection .tab-link').forEach(tl => tl.classList.remove('hidden'));
 
     if (firstVisibleTab) {
         const tabToActivate = document.getElementById(firstVisibleTab);
-        const linkToActivate = document.querySelector(`.tab-link[data-tab="${firstVisibleTab}"]`);
+        const linkToActivate = document.querySelector(`#resultsSection .tab-link[data-tab="${firstVisibleTab}"]`);
         if(tabToActivate) {
-            tabToActivate.classList.remove('hidden'); // Show the content for the first visible tab
+            tabToActivate.classList.remove('hidden'); 
             tabToActivate.dataset.active = "true";
         }
         if(linkToActivate) linkToActivate.dataset.active = "true";
         if (resultsSection) resultsSection.classList.remove('hidden');
     } else {
          if (resultsSection) resultsSection.classList.add('hidden'); 
-         // If no results, hide all tab links as well
          document.querySelectorAll('#resultsSection .tab-link').forEach(tl => tl.classList.add('hidden'));
     }
-}
-
-function renderFlashcards(container, flashcards, keywordsToHighlight = []) {
-    container.innerHTML = ''; 
-    if (!flashcards || flashcards.length === 0) {
-        container.innerHTML = '<p class="text-slate-500 text-sm">No flashcards generated.</p>';
-        return;
-    }
-    flashcards.forEach(fc => {
-        const cardDiv = document.createElement('div');
-        cardDiv.className = 'flashcard-custom';
-        
-        const termEl = document.createElement('strong');
-        termEl.className = 'flashcard-custom-term';
-        termEl.innerHTML = processTextForDisplay(fc.term, keywordsToHighlight); 
-        
-        const defEl = document.createElement('p');
-        defEl.className = 'flashcard-custom-definition';
-        defEl.innerHTML = processTextForDisplay(fc.definition.replace(/\n/g, '<br>'), keywordsToHighlight);
-        
-        cardDiv.appendChild(termEl);
-        cardDiv.appendChild(defEl);
-        container.appendChild(cardDiv);
-    });
 }
 
 function renderQuiz(container, quiz, keywordsToHighlight = []) {
     container.innerHTML = ''; 
     if (!quiz || !Array.isArray(quiz) || quiz.length === 0) {
-        container.innerHTML = '<p class="text-slate-500 text-sm">No quiz questions generated or data is invalid.</p>';
+        container.innerHTML = '<p class="text-slate-500 text-sm p-4">No quiz questions generated or data is invalid.</p>';
         return;
     }
     quiz.forEach((q, index) => {
@@ -284,7 +263,7 @@ function renderQuiz(container, quiz, keywordsToHighlight = []) {
             typeof q.correctAnswer !== 'string') {
             const errorItem = document.createElement('p');
             errorItem.textContent = `Error: Invalid data for question ${index + 1}.`;
-            errorItem.className = 'text-red-600 text-xs';
+            errorItem.className = 'text-red-600 text-xs p-4';
             container.appendChild(errorItem);
             return; 
         }
@@ -301,7 +280,6 @@ function renderQuiz(container, quiz, keywordsToHighlight = []) {
         optionsList.className = 'quiz-question-custom-options';
         q.options.forEach((opt) => {
             const listItem = document.createElement('li');
-            // listItem.className = 'quiz-option-item'; // If specific option styling is needed
             listItem.innerHTML = processTextForDisplay(typeof opt === 'string' ? opt : JSON.stringify(opt), keywordsToHighlight);
             optionsList.appendChild(listItem);
         });
@@ -351,4 +329,260 @@ function setCurrentYear(elementId) {
     if (yearSpan) {
         yearSpan.textContent = new Date().getFullYear();
     }
+}
+
+let currentFlashcardIndex = 0;
+let allFlashcards = [];
+let currentFlashcardChatHistory = [];
+let flashcardContext = 'main'; 
+
+function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight = [], context = 'main') {
+    console.log(`renderInteractiveFlashcards called for context: ${context}. Number of flashcards: ${flashcards ? flashcards.length : 0}`);
+    container.innerHTML = '';
+    allFlashcards = flashcards;
+    currentFlashcardIndex = 0;
+    currentFlashcardChatHistory = [];
+    flashcardContext = context;
+
+    if (!allFlashcards || !Array.isArray(allFlashcards) || allFlashcards.length === 0) {
+        console.warn("renderInteractiveFlashcards: No flashcards data or empty array. Displaying fallback message.");
+        container.innerHTML = `<p class="text-slate-500 text-sm p-4">No flashcards available to display interactively.</p>`;
+        return;
+    }
+    console.log("Proceeding to render interactive flashcard UI.");
+
+    const flashcardWrapper = document.createElement('div');
+    flashcardWrapper.className = 'flex flex-col items-center w-full max-w-2xl mx-auto';
+    
+    const cardScene = document.createElement('div');
+    cardScene.id = `flashcardScene-${flashcardContext}`;
+    cardScene.className = 'w-full h-80 sm:h-96 [perspective:1000px] mb-4';
+
+    const cardInner = document.createElement('div');
+    cardInner.id = `flashcardInner-${flashcardContext}`;
+    cardInner.className = 'relative w-full h-full transition-transform duration-700 ease-in-out [transform-style:preserve-3d]';
+    
+    cardScene.appendChild(cardInner);
+    flashcardWrapper.appendChild(cardScene);
+
+    const controlsDiv = document.createElement('div');
+    controlsDiv.className = 'flex items-center justify-between w-full mb-4 px-2';
+    controlsDiv.innerHTML = `
+        <button id="prevFlashcardBtn-${flashcardContext}" class="flashcard-nav-btn">&larr; Prev</button>
+        <span id="flashcardCounter-${flashcardContext}" class="text-sm text-slate-600">1 / ${allFlashcards.length}</span>
+        <button id="nextFlashcardBtn-${flashcardContext}" class="flashcard-nav-btn">Next &rarr;</button>
+    `;
+    flashcardWrapper.appendChild(controlsDiv);
+    
+    const aiChatContainer = document.createElement('div');
+    aiChatContainer.id = `flashcardAiChatContainer-${flashcardContext}`;
+    aiChatContainer.className = 'w-full mt-4 p-4 bg-slate-50 rounded-lg shadow hidden border border-slate-200';
+    aiChatContainer.innerHTML = `
+        <h4 class="text-md font-semibold text-slate-700 mb-2">AI Helper</h4>
+        <div id="flashcardAiChatMessages-${flashcardContext}" class="h-32 overflow-y-auto border border-slate-200 rounded-md p-2 mb-2 text-xs space-y-1.5 bg-white"></div>
+        <div class="flex space-x-2">
+            <input type="text" id="flashcardAiChatInput-${flashcardContext}" class="form-input flex-grow text-xs" placeholder="Ask a follow-up question...">
+            <button id="flashcardAiChatSendBtn-${flashcardContext}" class="px-3 py-1 bg-sky-500 hover:bg-sky-600 text-white text-xs font-medium rounded-md shadow-sm">Send</button>
+        </div>
+        <p id="flashcardAiChatStatus-${flashcardContext}" class="text-xs text-slate-500 mt-1"></p>
+    `;
+    flashcardWrapper.appendChild(aiChatContainer);
+    
+    container.appendChild(flashcardWrapper);
+    displayFlashcard(currentFlashcardIndex);
+    setupFlashcardEventListeners();
+}
+
+function displayFlashcard(index) {
+    const cardInner = document.getElementById(`flashcardInner-${flashcardContext}`);
+    const counter = document.getElementById(`flashcardCounter-${flashcardContext}`);
+    const prevBtn = document.getElementById(`prevFlashcardBtn-${flashcardContext}`);
+    const nextBtn = document.getElementById(`nextFlashcardBtn-${flashcardContext}`);
+    const aiChatContainer = document.getElementById(`flashcardAiChatContainer-${flashcardContext}`);
+    const aiChatMessages = document.getElementById(`flashcardAiChatMessages-${flashcardContext}`);
+
+    if (!cardInner || !allFlashcards[index]) {
+        console.error("displayFlashcard: Card inner element or flashcard data missing for index", index);
+        return;
+    }
+    cardInner.innerHTML = ''; 
+    cardInner.classList.remove('[transform:rotateY(180deg)]');
+
+    const cardData = allFlashcards[index];
+    currentFlashcardChatHistory = []; 
+    if(aiChatMessages) aiChatMessages.innerHTML = '';
+    if(aiChatContainer) aiChatContainer.classList.add('hidden');
+
+
+    const frontFace = document.createElement('div');
+    frontFace.className = 'flashcard-face flashcard-front';
+    frontFace.innerHTML = `
+        <div class="p-6 flex flex-col items-center justify-center h-full text-center">
+            <p class="text-lg sm:text-xl font-semibold text-indigo-700 mb-4">${processTextForDisplay(cardData.term)}</p>
+            <textarea id="flashcardUserAnswer-${flashcardContext}" class="form-textarea w-full max-w-xs h-20 text-sm p-2 border-slate-300 rounded-md shadow-sm mb-3" placeholder="Type your answer here..."></textarea>
+            <button id="submitFlashcardAnswerBtn-${flashcardContext}" class="flashcard-action-btn bg-green-500 hover:bg-green-600">Submit & Flip</button>
+        </div>
+    `;
+    
+    const backFace = document.createElement('div');
+    backFace.className = 'flashcard-face flashcard-back [transform:rotateY(180deg)]';
+    backFace.innerHTML = `
+        <div class="p-6 flex flex-col h-full">
+            <div class="flex-grow space-y-2 overflow-y-auto mb-3 pr-1">
+                <div id="flashcardUserFeedback-${flashcardContext}" class="text-xs p-2 rounded-md"></div>
+                <div>
+                    <strong class="block text-sm font-semibold text-indigo-700 mb-1">Correct Answer:</strong>
+                    <p class="text-sm text-slate-700">${processTextForDisplay(cardData.definition)}</p>
+                </div>
+            </div>
+            <div class="mt-auto pt-2 flex flex-wrap gap-2 justify-between items-center border-t border-slate-200">
+                <button id="explainFlashcardBtn-${flashcardContext}" class="flashcard-action-btn bg-sky-500 hover:bg-sky-600 text-xs">Explain More</button>
+                <button id="flipToFrontBtn-${flashcardContext}" class="flashcard-action-btn bg-slate-500 hover:bg-slate-600 text-xs">Flip to Front</button>
+            </div>
+        </div>
+    `;
+
+    cardInner.appendChild(frontFace);
+    cardInner.appendChild(backFace);
+
+    if(counter) counter.textContent = `${index + 1} / ${allFlashcards.length}`;
+    if(prevBtn) prevBtn.disabled = index === 0;
+    if(nextBtn) nextBtn.disabled = index === allFlashcards.length - 1;
+
+    setupCardActionListeners();
+}
+
+function setupCardActionListeners() {
+    const cardInner = document.getElementById(`flashcardInner-${flashcardContext}`);
+    const submitBtn = document.getElementById(`submitFlashcardAnswerBtn-${flashcardContext}`);
+    const explainBtn = document.getElementById(`explainFlashcardBtn-${flashcardContext}`);
+    const flipToFrontBtn = document.getElementById(`flipToFrontBtn-${flashcardContext}`);
+    const userAnswerTextarea = document.getElementById(`flashcardUserAnswer-${flashcardContext}`);
+    const userFeedbackDiv = document.getElementById(`flashcardUserFeedback-${flashcardContext}`);
+    const aiChatContainer = document.getElementById(`flashcardAiChatContainer-${flashcardContext}`);
+    const aiChatStatus = document.getElementById(`flashcardAiChatStatus-${flashcardContext}`);
+
+
+    if (submitBtn && cardInner && userAnswerTextarea && userFeedbackDiv) {
+        submitBtn.onclick = async () => {
+            const userAnswer = userAnswerTextarea.value;
+            userFeedbackDiv.innerHTML = `<div class="inline-block animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-slate-500 mr-1.5 align-middle"></div> <span class="text-slate-500 align-middle">Getting feedback...</span>`;
+            userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-slate-100 border border-slate-200';
+            cardInner.classList.add('[transform:rotateY(180deg)]');
+            try {
+                const result = await apiFlashcardInteract(allFlashcards[currentFlashcardIndex], "submit_answer", userAnswer);
+                userFeedbackDiv.innerHTML = processTextForDisplay(result.feedback);
+                if (result.feedback.toLowerCase().includes("correct")) {
+                    userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-green-50 border border-green-200 text-green-700';
+                } else if (result.feedback.toLowerCase().includes("partially correct")) {
+                    userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-yellow-50 border border-yellow-200 text-yellow-700';
+                } else {
+                     userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-red-50 border border-red-200 text-red-700';
+                }
+            } catch (error) {
+                userFeedbackDiv.innerHTML = `<span class="text-red-600">Error getting feedback: ${error.message}</span>`;
+                userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-red-50 border border-red-200';
+            }
+        };
+    }
+    if (explainBtn && aiChatContainer && aiChatStatus) {
+        explainBtn.onclick = async () => {
+            aiChatContainer.classList.remove('hidden');
+            addMessageToChat('AI', 'Getting explanation...', 'system');
+            aiChatStatus.textContent = 'Getting explanation...';
+            try {
+                const result = await apiFlashcardInteract(allFlashcards[currentFlashcardIndex], "request_explanation");
+                addMessageToChat('AI', result.explanation, 'ai');
+                currentFlashcardChatHistory.push({role: "model", parts: [{text: result.explanation}]});
+                aiChatStatus.textContent = '';
+            } catch (error) {
+                addMessageToChat('AI', `Error: ${error.message}`, 'error');
+                aiChatStatus.textContent = `Error getting explanation.`;
+            }
+        };
+    }
+    if (flipToFrontBtn && cardInner) {
+        flipToFrontBtn.onclick = () => {
+            cardInner.classList.remove('[transform:rotateY(180deg)]');
+            if(userAnswerTextarea) userAnswerTextarea.value = '';
+            if(userFeedbackDiv) userFeedbackDiv.innerHTML = '';
+            if(aiChatContainer) aiChatContainer.classList.add('hidden');
+            const chatMessages = document.getElementById(`flashcardAiChatMessages-${flashcardContext}`);
+            if(chatMessages) chatMessages.innerHTML = '';
+            currentFlashcardChatHistory = [];
+        };
+    }
+}
+
+function setupFlashcardEventListeners() {
+    const prevBtn = document.getElementById(`prevFlashcardBtn-${flashcardContext}`);
+    const nextBtn = document.getElementById(`nextFlashcardBtn-${flashcardContext}`);
+    const aiChatInput = document.getElementById(`flashcardAiChatInput-${flashcardContext}`);
+    const aiChatSendBtn = document.getElementById(`flashcardAiChatSendBtn-${flashcardContext}`);
+    const aiChatStatus = document.getElementById(`flashcardAiChatStatus-${flashcardContext}`);
+
+    if(prevBtn) {
+        prevBtn.onclick = () => {
+            if (currentFlashcardIndex > 0) {
+                currentFlashcardIndex--;
+                displayFlashcard(currentFlashcardIndex);
+            }
+        };
+    }
+    if(nextBtn) {
+        nextBtn.onclick = () => {
+            if (currentFlashcardIndex < allFlashcards.length - 1) {
+                currentFlashcardIndex++;
+                displayFlashcard(currentFlashcardIndex);
+            }
+        };
+    }
+    
+    const sendChatMessage = async () => {
+        if (!aiChatInput || !aiChatStatus) return;
+        const userQuery = aiChatInput.value.trim();
+        if (!userQuery) return;
+        addMessageToChat('You', userQuery, 'user');
+        aiChatInput.value = '';
+        aiChatStatus.textContent = 'AI is thinking...';
+        try {
+            const result = await apiFlashcardInteract(allFlashcards[currentFlashcardIndex], "chat_message", null, userQuery, currentFlashcardChatHistory);
+            addMessageToChat('AI', result.chatResponse, 'ai');
+            currentFlashcardChatHistory = result.updatedChatHistory;
+            aiChatStatus.textContent = '';
+        } catch (error) {
+            addMessageToChat('AI', `Error: ${error.message}`, 'error');
+            aiChatStatus.textContent = 'Error in chat.';
+        }
+    };
+
+    if(aiChatSendBtn) aiChatSendBtn.onclick = sendChatMessage;
+    if(aiChatInput) aiChatInput.onkeypress = (e) => { if (e.key === 'Enter') { e.preventDefault(); sendChatMessage(); } };
+}
+
+function addMessageToChat(sender, message, type) {
+    const messagesDiv = document.getElementById(`flashcardAiChatMessages-${flashcardContext}`);
+    if (!messagesDiv) return;
+    const messageEl = document.createElement('div');
+    let senderClass = 'text-slate-700';
+    let messageBgClass = 'bg-white';
+    let textAlignClass = 'mr-auto'; // Default for AI/System
+
+    if (type === 'user') {
+        senderClass = 'text-blue-600 font-semibold';
+        messageBgClass = 'bg-blue-50';
+        textAlignClass = 'ml-auto'; // User messages align right
+    } else if (type === 'ai') {
+        senderClass = 'text-indigo-600 font-semibold';
+        messageBgClass = 'bg-indigo-50';
+    } else if (type === 'system' || type === 'error') {
+        senderClass = 'text-slate-500 italic';
+        messageBgClass = 'bg-slate-100';
+         if(type === 'error') senderClass = 'text-red-500 italic';
+    }
+    
+    messageEl.className = `p-1.5 rounded-md ${messageBgClass} max-w-[85%] ${textAlignClass} mb-1`;
+    messageEl.innerHTML = `<strong class="${senderClass}">${sender}:</strong> ${processTextForDisplay(message)}`;
+    messagesDiv.appendChild(messageEl);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
