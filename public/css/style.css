@@ -2933,7 +2933,6 @@ body {
 }
 
 .flashcard-progress-dot.partial {
-  /* New style for partially correct */
   --tw-bg-opacity: 1;
   background-color: rgb(250 204 21 / var(--tw-bg-opacity, 1));
 }
@@ -2956,6 +2955,10 @@ body {
 .flashcard-progress-dot.marked:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(234 179 8 / var(--tw-bg-opacity, 1));
+}
+
+.flashcard-progress-dot.marked {
+  /* Can be same as partial or distinct */
 }
 
 /* Styles for flashcards displayed in a static list (e.g. dashboard modal before launching study mode) */
@@ -3007,6 +3010,8 @@ body {
 .quiz-question-custom-correct-answer strong {
   font-weight: 600;
 }
+
+/* Custom Confirmation Modal Styles */
 
 .pointer-events-none {
   pointer-events: none;
@@ -3062,6 +3067,10 @@ body {
 
 .z-\[110\] {
   z-index: 110;
+}
+
+.z-\[120\] {
+  z-index: 120;
 }
 
 .z-\[90\] {
@@ -3277,6 +3286,10 @@ body {
   max-width: none;
 }
 
+.max-w-sm {
+  max-width: 24rem;
+}
+
 .max-w-xs {
   max-width: 20rem;
 }
@@ -3345,6 +3358,10 @@ body {
   align-items: center;
 }
 
+.justify-end {
+  justify-content: flex-end;
+}
+
 .justify-center {
   justify-content: center;
 }
@@ -3390,6 +3407,12 @@ body {
   --tw-space-x-reverse: 0;
   margin-right: calc(0.5rem * var(--tw-space-x-reverse));
   margin-left: calc(0.5rem * calc(1 - var(--tw-space-x-reverse)));
+}
+
+.space-x-3 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-x-reverse: 0;
+  margin-right: calc(0.75rem * var(--tw-space-x-reverse));
+  margin-left: calc(0.75rem * calc(1 - var(--tw-space-x-reverse)));
 }
 
 .space-y-1 > :not([hidden]) ~ :not([hidden]) {
@@ -3675,6 +3698,10 @@ body {
   --tw-bg-opacity: 0.6;
 }
 
+.bg-opacity-70 {
+  --tw-bg-opacity: 0.7;
+}
+
 .bg-opacity-75 {
   --tw-bg-opacity: 0.75;
 }
@@ -3831,10 +3858,6 @@ body {
 
 .text-center {
   text-align: center;
-}
-
-.text-right {
-  text-align: right;
 }
 
 .align-middle {

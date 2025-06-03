@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalSummaryOutput = document.getElementById('modalSummaryOutput');
     const modalFlashcardsOutputPlaceholder = document.querySelector('#modalFlashcardsTab .output-box-flashcards-placeholder');
     const modalFlashcardsOutputRaw = document.getElementById('modalFlashcardsOutputRaw');
-    // Button ID is launchFlashcardModalBtn-modal as per dashboard.html
     const launchFlashcardModalBtnModal = document.getElementById('launchFlashcardModalBtn-modal'); 
 
     const modalQuizOutput = document.getElementById('modalQuizOutput');
@@ -27,6 +26,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalExplainButton = document.getElementById('modalExplainSelectedSummaryTextButton');
     const modalExplanationOutput = document.getElementById('modalExplanationOutput');
     const modalExplainInstruction = document.getElementById('modalExplainInstruction'); 
+
+    const customConfirmModal = document.getElementById('customConfirmModal');
+    const customConfirmModalTitle = document.getElementById('customConfirmModalTitle');
+    const customConfirmModalMessage = document.getElementById('customConfirmModalMessage');
+    const customConfirmModalYes = document.getElementById('customConfirmModalYes');
+    const customConfirmModalNo = document.getElementById('customConfirmModalNo');
+    let sessionToDeleteId = null;
+    let cardElementToDelete = null;
+
 
     let currentOpenSessionId = null;
     let currentKeywordsForModalHighlighting = [];
@@ -70,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createSessionCard(session) {
         const card = document.createElement('div');
-        card.className = 'bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 ease-in-out overflow-hidden cursor-pointer flex flex-col';
+        card.className = 'bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 ease-in-out overflow-hidden flex flex-col';
         card.dataset.sessionId = session.id;
 
         const contentDiv = document.createElement('div');
@@ -99,15 +107,64 @@ document.addEventListener('DOMContentLoaded', () => {
         card.appendChild(contentDiv);
 
         const footerDiv = document.createElement('div');
-        footerDiv.className = 'bg-slate-50 px-5 sm:px-6 py-2.5 sm:py-3 border-t border-slate-200 text-right';
+        footerDiv.className = 'bg-slate-50 px-5 sm:px-6 py-2.5 sm:py-3 border-t border-slate-200 flex justify-between items-center';
+        
         const viewDetailsButton = document.createElement('button');
         viewDetailsButton.className = 'text-xs sm:text-sm font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none';
         viewDetailsButton.textContent = 'View Details';
+        viewDetailsButton.addEventListener('click', (e) => {
+            e.stopPropagation(); 
+            openSessionDetailModal(session.id);
+        });
         footerDiv.appendChild(viewDetailsButton);
+
+        const deleteCardButton = document.createElement('button');
+        deleteCardButton.className = 'text-xs sm:text-sm font-medium text-red-500 hover:text-red-700 focus:outline-none';
+        deleteCardButton.textContent = 'Delete';
+        deleteCardButton.addEventListener('click', (e) => {
+            e.stopPropagation(); 
+            sessionToDeleteId = session.id;
+            cardElementToDelete = card;
+            if(customConfirmModalTitle) customConfirmModalTitle.textContent = "Delete Session?";
+            if(customConfirmModalMessage) customConfirmModalMessage.textContent = `Are you sure you want to delete the session "${session.original_filename || 'Untitled Session'}"? This action cannot be undone.`;
+            if(customConfirmModal) toggleElementVisibility('customConfirmModal', true);
+        });
+        footerDiv.appendChild(deleteCardButton);
         card.appendChild(footerDiv);
 
-        card.addEventListener('click', () => openSessionDetailModal(session.id));
+        contentDiv.addEventListener('click', () => openSessionDetailModal(session.id));
+        title.addEventListener('click', () => openSessionDetailModal(session.id)); 
+
         return card;
+    }
+
+    if(customConfirmModalNo) {
+        customConfirmModalNo.addEventListener('click', () => {
+            toggleElementVisibility('customConfirmModal', false);
+            sessionToDeleteId = null;
+            cardElementToDelete = null;
+        });
+    }
+
+    if(customConfirmModalYes) {
+        customConfirmModalYes.addEventListener('click', async () => {
+            if (sessionToDeleteId && cardElementToDelete) {
+                try {
+                    await apiDeleteSession(sessionToDeleteId);
+                    cardElementToDelete.remove();
+                    if (sessionsListContainer && sessionsListContainer.children.length === 0) {
+                        sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
+                    }
+                } catch (error) {
+                    // Show error in a more user-friendly way if possible, e.g., using showMessage for a status div on the dashboard
+                    showMessage('loadingSessionsMessage', `Failed to delete session: ${error.message}`, 'error'); // Re-using loadingSessionsMessage for errors
+                } finally {
+                    toggleElementVisibility('customConfirmModal', false);
+                    sessionToDeleteId = null;
+                    cardElementToDelete = null;
+                }
+            }
+        });
     }
     
     function renderModalSummary(summaryText, keywordsToHighlight = []) {
@@ -230,8 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = `<p class="text-slate-600 text-sm">Total ${session.flashcards.length} flashcards. Click "Study These Flashcards" to begin.</p>`;
                 if (launchFlashcardModalBtnModal) {
                     launchFlashcardModalBtnModal.classList.remove('hidden');
-                    // Ensure listener is attached or re-attached if modal is re-opened for different sessions
-                    launchFlashcardModalBtnModal.onclick = () => { // Moved inside to ensure it uses the latest session data
+                    launchFlashcardModalBtnModal.onclick = () => { 
                         const flashcardModalContent = document.getElementById('flashcardModalContent-modal');
                         if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards) {
                             renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
@@ -369,25 +425,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (deleteSessionButton) {
+    if (deleteSessionButton) { 
         deleteSessionButton.addEventListener('click', async () => {
-            if (!currentOpenSessionId || !confirm(`Are you sure you want to delete this session? This action cannot be undone.`)) return;
+            if (!currentOpenSessionId) return; // Should not happen if modal is open
             
-            deleteSessionButton.disabled = true; 
-            deleteSessionButton.textContent = 'Deleting...';
-            try {
-                await apiDeleteSession(currentOpenSessionId);
-                alert('Session deleted successfully.');
-                toggleElementVisibility('sessionDetailModal', false); 
-                currentOpenSessionId = null;
-                window.currentDashboardSessionData = null;
-                loadUserSessions(); 
-            } catch (error) {
-                alert(`Failed to delete session: ${error.message}`);
-            } finally {
-                deleteSessionButton.disabled = false; 
-                deleteSessionButton.textContent = 'Delete Session';
-            }
+            sessionToDeleteId = currentOpenSessionId; // Set for the custom confirm modal
+            cardElementToDelete = document.querySelector(`.bg-white[data-session-id="${currentOpenSessionId}"]`); // Find the card element by data attribute
+            
+            if(customConfirmModalTitle) customConfirmModalTitle.textContent = "Delete Session?";
+            const sessionData = window.currentDashboardSessionData || { original_filename: 'this session' };
+            if(customConfirmModalMessage) customConfirmModalMessage.textContent = `Are you sure you want to delete the session "${sessionData.original_filename || 'Untitled Session'}"? This action cannot be undone.`;
+            if(customConfirmModal) toggleElementVisibility('customConfirmModal', true);
         });
     }
     
