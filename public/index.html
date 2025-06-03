@@ -13,7 +13,7 @@
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js'></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans">
-    <header class="bg-white shadow-md sticky top-0 z-50">
+    <header class="bg-white shadow-md sticky top-0 z-40">
         <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center py-3 sm:py-4">
             <h1 class="text-2xl sm:text-3xl font-bold text-indigo-600">Smart Study AI</h1>
             <nav class="space-x-1.5 sm:space-x-2 mt-2 sm:mt-0">
@@ -120,11 +120,15 @@
                  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
                     <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-2 sm:mb-0">Flashcards</h3>
                     <div class="actions space-x-2 flex-shrink-0">
-                        <button class="copy-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="flashcardsOutput">Copy JSON</button>
-                        <button class="download-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="flashcardsOutput" data-filename="flashcards.json">Download JSON</button>
+                        <button id="launchFlashcardModalBtn-main" class="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Study Flashcards</button>
+                        <button class="copy-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="flashcardsOutputRaw">Copy JSON</button>
+                        <button class="download-button px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150" data-target="flashcardsOutputRaw" data-filename="flashcards.json">Download JSON</button>
                     </div>
                 </div>
-                <div id="flashcardsOutput" class="output-box flashcards-container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                <div id="flashcardsOutput" class="output-box-flashcards-placeholder p-4 text-center text-slate-500 text-sm">
+                    Click "Study Flashcards" to begin.
+                </div>
+                <textarea id="flashcardsOutputRaw" class="hidden"></textarea>
             </div>
 
             <div id="quizTab" class="tab-content hidden">
@@ -141,7 +145,7 @@
         </section>
     </main>
 
-    <div id="authModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+    <div id="authModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
         <div class="modal-content bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 ease-out scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100">
             <div class="flex justify-between items-start mb-6">
                 <h3 id="modalTitle" class="text-xl sm:text-2xl font-semibold text-slate-800">Login</h3>
@@ -160,6 +164,17 @@
                 <div id="authFormMessage" class="text-sm mt-3"></div>
                 <p id="authFormToggle" class="text-xs sm:text-sm text-center text-slate-600 mt-4">Don't have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Register</a></p>
             </form>
+        </div>
+    </div>
+
+    <div id="flashcardStudyModal-main" class="group fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+        <div class="bg-white p-5 sm:p-6 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all duration-300 scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100 max-h-[95vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg sm:text-xl font-semibold text-slate-800">Study Flashcards</h3>
+                <button id="closeFlashcardModalBtn-main" class="text-slate-400 hover:text-slate-600 text-2xl leading-none focus:outline-none">&times;</button>
+            </div>
+            <div id="flashcardModalContent-main" class="flex-grow overflow-y-auto">
+            </div>
         </div>
     </div>
     

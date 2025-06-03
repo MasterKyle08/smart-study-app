@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans">
-    <header class="bg-white shadow-md sticky top-0 z-50">
+    <header class="bg-white shadow-md sticky top-0 z-40">
         <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center py-3 sm:py-4">
             <h1 class="text-2xl sm:text-3xl font-bold text-indigo-600">Smart Study AI - Dashboard</h1>
             <nav class="space-x-2 sm:space-x-3 mt-2 sm:mt-0">
@@ -25,7 +25,7 @@
             <p id="loadingSessions" class="text-slate-600 col-span-full text-center py-5 text-sm">Loading...</p>
         </div>
         
-        <div id="sessionDetailModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+        <div id="sessionDetailModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
             <div class="modal-content bg-white p-5 sm:p-8 rounded-xl shadow-2xl w-full max-w-3xl transform transition-all duration-300 ease-out scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100 max-h-[90vh] flex flex-col">
                 <div class="flex justify-between items-start mb-4 sm:mb-6">
                     <h3 id="sessionModalTitle" class="text-xl sm:text-2xl font-semibold text-slate-800">Session Details</h3>
@@ -56,7 +56,11 @@
                     </div>
                     <div id="modalFlashcardsTab" class="tab-content hidden">
                         <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Flashcards</h4>
-                        <div id="modalFlashcardsOutput" class="output-box flashcards-container grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"></div>
+                         <button id="launchFlashcardModalBtn-modal" class="mb-4 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Study These Flashcards</button>
+                        <div id="modalFlashcardsOutput" class="output-box-flashcards-placeholder p-4 text-slate-500 text-sm">
+                            Click "Study These Flashcards" to begin. Raw JSON data below for reference.
+                        </div>
+                        <textarea id="modalFlashcardsOutputRaw" class="form-textarea w-full h-32 text-xs mt-2 bg-slate-50 border-slate-300 rounded-md"></textarea>
                     </div>
                     <div id="modalQuizTab" class="tab-content hidden">
                         <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Quiz</h4>
@@ -94,6 +98,18 @@
                 </div>
             </div>
         </div>
+
+        <div id="flashcardStudyModal-modal" class="group fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+            <div class="bg-white p-5 sm:p-6 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all duration-300 scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100 max-h-[95vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg sm:text-xl font-semibold text-slate-800">Study Flashcards</h3>
+                    <button id="closeFlashcardModalBtn-modal" class="text-slate-400 hover:text-slate-600 text-2xl leading-none focus:outline-none">&times;</button>
+                </div>
+                <div id="flashcardModalContent-modal" class="flex-grow overflow-y-auto">
+                </div>
+            </div>
+        </div>
+
     </main>
     <footer class="bg-slate-800 text-slate-300 text-center py-6 mt-auto text-sm">
         <div class="container mx-auto px-4"><p>&copy; <span id="currentYearDashboard"></span> Smart Study AI.</p></div>

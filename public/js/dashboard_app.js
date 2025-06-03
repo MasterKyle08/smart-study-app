@@ -8,7 +8,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalCreatedAt = document.getElementById('modalCreatedAt');
     const modalUpdatedAt = document.getElementById('modalUpdatedAt');
     const modalSummaryOutput = document.getElementById('modalSummaryOutput');
-    const modalFlashcardsOutput = document.getElementById('modalFlashcardsOutput');
+    const modalFlashcardsOutputPlaceholder = document.querySelector('#modalFlashcardsTab .output-box-flashcards-placeholder');
+    const modalFlashcardsOutputRaw = document.getElementById('modalFlashcardsOutputRaw');
+    // Button ID is launchFlashcardModalBtn-modal as per dashboard.html
+    const launchFlashcardModalBtnModal = document.getElementById('launchFlashcardModalBtn-modal'); 
+
     const modalQuizOutput = document.getElementById('modalQuizOutput');
     const modalOriginalTextOutput = document.getElementById('modalOriginalTextOutput');
     const regenerateButton = document.getElementById('regenerateButton');
@@ -26,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentOpenSessionId = null;
     let currentKeywordsForModalHighlighting = [];
+    window.currentDashboardSessionData = null; 
 
     if (!localStorage.getItem('authToken')) {
         window.location.href = 'index.html'; 
@@ -59,20 +64,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.location.href = 'index.html';
             }
         } finally {
-            loadingSessionsMessage.classList.add('hidden');
+            if(loadingSessionsMessage) loadingSessionsMessage.classList.add('hidden');
         }
     }
 
     function createSessionCard(session) {
         const card = document.createElement('div');
-        card.className = 'session-card bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 ease-in-out overflow-hidden cursor-pointer flex flex-col';
+        card.className = 'bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 ease-in-out overflow-hidden cursor-pointer flex flex-col';
         card.dataset.sessionId = session.id;
 
         const contentDiv = document.createElement('div');
-        contentDiv.className = 'p-6 flex-grow';
+        contentDiv.className = 'p-5 sm:p-6 flex-grow';
 
         const title = document.createElement('h3');
-        title.className = 'text-xl font-semibold text-indigo-700 mb-2 truncate';
+        title.className = 'text-lg sm:text-xl font-semibold text-indigo-700 mb-1.5 sm:mb-2 truncate';
         title.textContent = session.original_filename || 'Untitled Session';
         contentDiv.appendChild(title);
 
@@ -83,20 +88,20 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.appendChild(createdP);
         
         const summaryPreview = document.createElement('p');
-        summaryPreview.className = 'summary-preview text-slate-600 mt-3 text-sm leading-relaxed h-20 overflow-hidden relative';
-        summaryPreview.textContent = session.summary ? (session.summary.substring(0, 120) + (session.summary.length > 120 ? '...' : '')) : 'No summary available.';
+        summaryPreview.className = 'text-slate-600 mt-2 sm:mt-3 text-sm leading-relaxed h-16 sm:h-20 overflow-hidden relative';
+        summaryPreview.textContent = session.summary ? (session.summary.substring(0, 100) + (session.summary.length > 100 ? '...' : '')) : 'No summary available.';
         const fadeSpan = document.createElement('span');
-        fadeSpan.className = 'absolute bottom-0 left-0 w-full h-8 bg-gradient-to-t from-white to-transparent';
-        if (session.summary && session.summary.length > 120) {
+        fadeSpan.className = 'absolute bottom-0 left-0 w-full h-6 sm:h-8 bg-gradient-to-t from-white to-transparent';
+        if (session.summary && session.summary.length > 100) {
             summaryPreview.appendChild(fadeSpan);
         }
         contentDiv.appendChild(summaryPreview);
         card.appendChild(contentDiv);
 
         const footerDiv = document.createElement('div');
-        footerDiv.className = 'bg-slate-50 px-6 py-3 border-t border-slate-200';
+        footerDiv.className = 'bg-slate-50 px-5 sm:px-6 py-2.5 sm:py-3 border-t border-slate-200 text-right';
         const viewDetailsButton = document.createElement('button');
-        viewDetailsButton.className = 'text-sm font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none';
+        viewDetailsButton.className = 'text-xs sm:text-sm font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none';
         viewDetailsButton.textContent = 'View Details';
         footerDiv.appendChild(viewDetailsButton);
         card.appendChild(footerDiv);
@@ -106,11 +111,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function renderModalSummary(summaryText, keywordsToHighlight = []) {
+        if (!modalSummaryOutput) return;
         modalSummaryOutput.innerHTML = ''; 
         if(modalExplainInstruction) modalExplainInstruction.classList.add('hidden');
 
         if (!summaryText) {
-            modalSummaryOutput.innerHTML = '<p class="text-slate-500">No summary generated.</p>';
+            modalSummaryOutput.innerHTML = '<p class="text-slate-500 text-sm">No summary generated.</p>';
             return;
         }
         
@@ -125,16 +131,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 firstHeadingFound = true;
                 if (currentSectionDetails) { 
                     const contentDiv = document.createElement('div');
-                    contentDiv.className = 'p-3 border-t border-slate-200';
+                    contentDiv.className = 'details-accordion-content';
                     contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
                     currentSectionDetails.appendChild(contentDiv);
                     modalSummaryOutput.appendChild(currentSectionDetails);
                 }
                 currentSectionDetails = document.createElement('details');
-                currentSectionDetails.className = 'bg-white border border-slate-200 rounded-md mb-3 overflow-hidden';
+                currentSectionDetails.className = 'details-accordion';
                 currentSectionDetails.open = true; 
                 const summaryTitle = document.createElement('summary');
-                summaryTitle.className = 'p-3 font-semibold cursor-pointer hover:bg-slate-50 list-none flex justify-between items-center';
+                summaryTitle.className = 'details-accordion-summary';
                 summaryTitle.innerHTML = processTextForDisplay(trimmedLine.substring(4), keywordsToHighlight); 
                 currentSectionDetails.appendChild(summaryTitle);
                 sectionContentHtml = ''; 
@@ -145,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (firstHeadingFound && currentSectionDetails) {
             const contentDiv = document.createElement('div');
-            contentDiv.className = 'p-3 border-t border-slate-200';
+            contentDiv.className = 'details-accordion-content';
             contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
             currentSectionDetails.appendChild(contentDiv);
             modalSummaryOutput.appendChild(currentSectionDetails);
@@ -157,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const relevantLines = firstBulletIdx !== -1 ? currentContentLines.slice(firstBulletIdx) : [];
                 if(relevantLines.length > 0) {
                     const ul = document.createElement('ul');
-                    ul.className = 'list-disc list-inside space-y-1';
+                    ul.className = 'list-disc list-inside space-y-1 pl-1';
                     relevantLines.forEach(l => {
                         const trimmedL = l.trim();
                         if (trimmedL.startsWith('* ') || trimmedL.startsWith('- ')) {
@@ -185,9 +191,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function openSessionDetailModal(sessionId) {
         currentOpenSessionId = sessionId;
-        regenerateOptionsDiv.classList.add('hidden'); 
-        modalSummaryRegenOptionsDiv.classList.add('hidden');
-        clearMessage('regenerateStatus');
+        if(regenerateOptionsDiv) regenerateOptionsDiv.classList.add('hidden'); 
+        if(modalSummaryRegenOptionsDiv) modalSummaryRegenOptionsDiv.classList.add('hidden');
+        if(regenerateStatus) clearMessage('regenerateStatus');
         if(modalExplanationOutput) {
              modalExplanationOutput.classList.add('hidden');
              modalExplanationOutput.innerHTML = '';
@@ -195,28 +201,54 @@ document.addEventListener('DOMContentLoaded', () => {
         if(modalExplainButton) modalExplainButton.classList.add('hidden');
         if(modalExplainInstruction) modalExplainInstruction.classList.add('hidden');
 
-        regenerateOptionsDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-        modalSummaryKeywordsInput.value = '';
-        modalSummaryAudienceSelect.value = '';
-        modalSummaryNegativeKeywordsInput.value = '';
-        document.querySelector('input[name="modalSummaryLength"][value="medium"]').checked = true;
-        document.querySelector('input[name="modalSummaryStyle"][value="paragraph"]').checked = true;
+        if(regenerateOptionsDiv) regenerateOptionsDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+        if(modalSummaryKeywordsInput) modalSummaryKeywordsInput.value = '';
+        if(modalSummaryAudienceSelect) modalSummaryAudienceSelect.value = '';
+        if(modalSummaryNegativeKeywordsInput) modalSummaryNegativeKeywordsInput.value = '';
+        
+        const mediumLengthRadio = document.querySelector('input[name="modalSummaryLength"][value="medium"]');
+        if(mediumLengthRadio) mediumLengthRadio.checked = true;
+        const paragraphStyleRadio = document.querySelector('input[name="modalSummaryStyle"][value="paragraph"]');
+        if(paragraphStyleRadio) paragraphStyleRadio.checked = true;
 
         try {
-            showMessage('regenerateStatus', 'Loading session details...', 'success');
+            if(regenerateStatus) showMessage('regenerateStatus', 'Loading session details...', 'success');
             const { session } = await apiGetSessionDetails(sessionId);
-            clearMessage('regenerateStatus');
+            window.currentDashboardSessionData = session; 
+            if(regenerateStatus) clearMessage('regenerateStatus');
 
-            modalTitle.textContent = session.original_filename || 'Session Details';
-            modalOriginalFilename.textContent = session.original_filename || 'N/A';
-            modalCreatedAt.textContent = new Date(session.created_at).toLocaleString();
-            modalUpdatedAt.textContent = new Date(session.updated_at).toLocaleString();
+            if(modalTitle) modalTitle.textContent = session.original_filename || 'Session Details';
+            if(modalOriginalFilename) modalOriginalFilename.textContent = session.original_filename || 'N/A';
+            if(modalCreatedAt) modalCreatedAt.textContent = new Date(session.created_at).toLocaleString();
+            if(modalUpdatedAt) modalUpdatedAt.textContent = new Date(session.updated_at).toLocaleString();
             
             currentKeywordsForModalHighlighting = []; 
-            renderModalSummary(session.summary, currentKeywordsForModalHighlighting);
-            renderFlashcards(modalFlashcardsOutput, session.flashcards, currentKeywordsForModalHighlighting); 
-            renderQuiz(modalQuizOutput, session.quiz, currentKeywordsForModalHighlighting); 
-            modalOriginalTextOutput.textContent = session.extracted_text || 'Original text not available.';
+            if(modalSummaryOutput) renderModalSummary(session.summary, currentKeywordsForModalHighlighting);
+            
+            if (session.flashcards && Array.isArray(session.flashcards) && session.flashcards.length > 0) {
+                if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = JSON.stringify(session.flashcards, null, 2);
+                if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = `<p class="text-slate-600 text-sm">Total ${session.flashcards.length} flashcards. Click "Study These Flashcards" to begin.</p>`;
+                if (launchFlashcardModalBtnModal) {
+                    launchFlashcardModalBtnModal.classList.remove('hidden');
+                    // Ensure listener is attached or re-attached if modal is re-opened for different sessions
+                    launchFlashcardModalBtnModal.onclick = () => { // Moved inside to ensure it uses the latest session data
+                        const flashcardModalContent = document.getElementById('flashcardModalContent-modal');
+                        if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards) {
+                            renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
+                            toggleElementVisibility('flashcardStudyModal-modal', true);
+                        } else {
+                            alert("No flashcards to study for this session or modal content area not found.");
+                        }
+                    };
+                }
+            } else {
+                if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = '<p class="text-slate-500 text-sm">No flashcards available for this session.</p>';
+                if (launchFlashcardModalBtnModal) launchFlashcardModalBtnModal.classList.add('hidden');
+                if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
+            }
+
+            if(modalQuizOutput) renderQuiz(modalQuizOutput, session.quiz, currentKeywordsForModalHighlighting); 
+            if(modalOriginalTextOutput) modalOriginalTextOutput.textContent = session.extracted_text || 'Original text not available.';
             
             document.querySelectorAll('#sessionDetailModal .tab-link').forEach(tl => tl.removeAttribute('data-active'));
             document.querySelectorAll('#sessionDetailModal .tab-content').forEach(tc => { tc.classList.add('hidden'); tc.removeAttribute('data-active'); });
@@ -230,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             toggleElementVisibility('sessionDetailModal', true);
         } catch (error) {
-            clearMessage('regenerateStatus');
+            if(regenerateStatus) clearMessage('regenerateStatus');
             alert(`Error: ${error.message || 'Could not load session details.'}`);
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
@@ -244,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         closeModalButton.addEventListener('click', () => {
             toggleElementVisibility('sessionDetailModal', false);
             currentOpenSessionId = null;
+            window.currentDashboardSessionData = null;
         });
     }
     if (sessionDetailModal) {
@@ -251,22 +284,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (event.target === sessionDetailModal) {
                 toggleElementVisibility('sessionDetailModal', false);
                 currentOpenSessionId = null;
+                window.currentDashboardSessionData = null;
             }
         });
     }
+    
+     const closeFlashcardStudyModalBtnModal = document.getElementById('closeFlashcardModalBtn-modal');
+     if(closeFlashcardStudyModalBtnModal) {
+        closeFlashcardStudyModalBtnModal.addEventListener('click', () => {
+            toggleElementVisibility('flashcardStudyModal-modal', false);
+        });
+     }
 
     if (regenerateButton) {
         regenerateButton.addEventListener('click', () => {
-            regenerateOptionsDiv.classList.toggle('hidden');
-            clearMessage('regenerateStatus');
-            if (!document.querySelector('input[name="regenOutputFormat"][value="summary"]').checked) {
+            if(regenerateOptionsDiv) regenerateOptionsDiv.classList.toggle('hidden');
+            if(regenerateStatus) clearMessage('regenerateStatus');
+            const summaryCheckbox = document.querySelector('input[name="regenOutputFormat"][value="summary"]');
+            if (summaryCheckbox && !summaryCheckbox.checked && modalSummaryRegenOptionsDiv) {
                 modalSummaryRegenOptionsDiv.classList.add('hidden');
             }
         });
     }
     
     const regenSummaryCheckbox = document.querySelector('input[name="regenOutputFormat"][value="summary"]');
-    if (regenSummaryCheckbox) {
+    if (regenSummaryCheckbox && modalSummaryRegenOptionsDiv) {
         regenSummaryCheckbox.addEventListener('change', (event) => {
             modalSummaryRegenOptionsDiv.classList.toggle('hidden', !event.target.checked);
         });
@@ -277,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!currentOpenSessionId) return;
             const formatsToRegen = Array.from(regenerateOptionsDiv.querySelectorAll('input[name="regenOutputFormat"]:checked')).map(cb => cb.value);
             if (formatsToRegen.length === 0) { 
-                showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error');
+                if(regenerateStatus) showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error');
                 return; 
             }
 
@@ -293,7 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             confirmRegenerateButton.disabled = true; 
             confirmRegenerateButton.textContent = 'Regenerating...';
-            showMessage('regenerateStatus', 'Regenerating content, please wait...', 'success');
+            if(regenerateStatus) showMessage('regenerateStatus', 'Regenerating content, please wait...', 'success');
             if(modalExplanationOutput) modalExplanationOutput.classList.add('hidden');
 
             try {
@@ -301,14 +343,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentOpenSessionId, formatsToRegen,
                     slp, ssp, sks, sap, snk
                 );
-                showMessage('regenerateStatus', 'Content regenerated successfully!', 'success');
-                renderModalSummary(updatedSession.summary, currentKeywordsForModalHighlighting);
-                renderFlashcards(modalFlashcardsOutput, updatedSession.flashcards, currentKeywordsForModalHighlighting);
-                renderQuiz(modalQuizOutput, updatedSession.quiz, currentKeywordsForModalHighlighting);
-                modalUpdatedAt.textContent = new Date(updatedSession.updated_at).toLocaleString();
+                window.currentDashboardSessionData = updatedSession; 
+                if(regenerateStatus) showMessage('regenerateStatus', 'Content regenerated successfully!', 'success');
+                if(modalSummaryOutput) renderModalSummary(updatedSession.summary, currentKeywordsForModalHighlighting);
+                
+                if (updatedSession.flashcards && updatedSession.flashcards.length > 0) {
+                    if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = JSON.stringify(updatedSession.flashcards, null, 2);
+                     if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = `<p class="text-slate-600 text-sm">Total ${updatedSession.flashcards.length} flashcards. Click "Study These Flashcards" to begin.</p>`;
+                    if (launchFlashcardModalBtnModal) launchFlashcardModalBtnModal.classList.remove('hidden');
+                } else {
+                    if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = '<p class="text-slate-500 text-sm">No flashcards available for this session.</p>';
+                    if (launchFlashcardModalBtnModal) launchFlashcardModalBtnModal.classList.add('hidden');
+                    if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
+                }
+
+                if(modalQuizOutput) renderQuiz(modalQuizOutput, updatedSession.quiz, currentKeywordsForModalHighlighting);
+                if(modalUpdatedAt) modalUpdatedAt.textContent = new Date(updatedSession.updated_at).toLocaleString();
                 loadUserSessions(); 
             } catch (error) {
-                showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
+                if(regenerateStatus) showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
             } finally {
                 confirmRegenerateButton.disabled = false; 
                 confirmRegenerateButton.textContent = 'Confirm Regeneration';
@@ -327,6 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Session deleted successfully.');
                 toggleElementVisibility('sessionDetailModal', false); 
                 currentOpenSessionId = null;
+                window.currentDashboardSessionData = null;
                 loadUserSessions(); 
             } catch (error) {
                 alert(`Failed to delete session: ${error.message}`);
@@ -339,7 +393,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (modalSummaryOutput && modalExplainButton && modalExplanationOutput) {
         document.addEventListener('selectionchange', () => { 
-            if (sessionDetailModal.classList.contains('hidden') || !document.getElementById('modalSummaryTab')?.dataset.active) {
+            const modalSummaryTab = document.getElementById('modalSummaryTab');
+            if (!sessionDetailModal || sessionDetailModal.dataset.visible !== 'true' || !modalSummaryTab || modalSummaryTab.dataset.active !== 'true') {
                 if(modalExplainButton) modalExplainButton.classList.add('hidden');
                 return;
             }
@@ -363,15 +418,15 @@ document.addEventListener('DOMContentLoaded', () => {
             modalExplainButton.disabled = true; modalExplainButton.textContent = 'Explaining...';
             modalExplanationOutput.classList.add('hidden'); modalExplanationOutput.innerHTML = '';
             try {
-                showMessage('regenerateStatus', 'Getting explanation...', 'success'); 
+                if(regenerateStatus) showMessage('regenerateStatus', 'Getting explanation...', 'success'); 
                 const { explanation } = await apiExplainSnippet(selectedText);
                 modalExplanationOutput.innerHTML = processTextForDisplay(explanation); 
                 modalExplanationOutput.classList.remove('hidden');
-                clearMessage('regenerateStatus');
+                if(regenerateStatus) clearMessage('regenerateStatus');
             } catch (error) {
-                modalExplanationOutput.innerHTML = `<p class="error-message">Error: ${error.message || 'Could not get explanation.'}</p>`;
+                modalExplanationOutput.innerHTML = `<p class="error-message p-3 rounded-md">Error: ${error.message || 'Could not get explanation.'}</p>`;
                 modalExplanationOutput.classList.remove('hidden');
-                showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
+                if(regenerateStatus) showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
             } finally {
                 modalExplainButton.disabled = false; modalExplainButton.textContent = 'Explain';
             }

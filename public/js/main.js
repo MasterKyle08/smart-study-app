@@ -1,8 +1,3 @@
-/**
- * @file public/js/main.js
- * @description Main JavaScript file for index.html. Initializes UI components and event listeners.
- */
-
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs('#resultsSection .tabs'); 
 
@@ -21,7 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         setTimeout(() => event.target.textContent = originalText, 1500);
                     })
                     .catch(err => {
-                        console.error('Failed to copy text: ', err);
                         try { 
                             const textArea = document.createElement("textarea");
                             textArea.value = textToCopy;
@@ -37,7 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             event.target.textContent = 'Copied!';
                             setTimeout(() => event.target.textContent = originalText, 1500);
                         } catch (execErr) {
-                            console.error('Fallback copy failed: ', execErr);
                             alert('Failed to copy text. Please try manually.');
                         }
                     });
@@ -81,8 +74,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (selection && selection.toString().trim().length > 0 &&
                 summaryOutputBox.contains(selection.anchorNode) &&
                 summaryOutputBox.contains(selection.focusNode) &&
-                !resultsSection.classList.contains('hidden') &&
-                summaryTab.classList.contains('active')
+                resultsSection && !resultsSection.classList.contains('hidden') && // Check resultsSection visibility
+                summaryTab && summaryTab.dataset.active === "true"
             ) {
                 explainButton.classList.remove('hidden');
             } else {
@@ -91,7 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         summaryOutputBox.addEventListener('mousedown', () => { 
-            // explainButton.classList.add('hidden'); // selectionchange will handle this
             explanationOutput.classList.add('hidden');
             explanationOutput.innerHTML = '';
         });
@@ -115,13 +107,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 explanationOutput.classList.remove('hidden');
                 hideProcessingStatus(); 
             } catch (error) {
-                console.error('Error explaining text:', error);
-                explanationOutput.innerHTML = `<p class="error-message">Error: ${error.message || 'Could not get explanation.'}</p>`;
+                explanationOutput.innerHTML = `<p class="error-message p-3 rounded-md">Error: ${error.message || 'Could not get explanation.'}</p>`;
                 explanationOutput.classList.remove('hidden');
                 showMessage('processingStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
             } finally {
                 explainButton.disabled = false;
-                explainButton.textContent = 'Explain Selection';
+                explainButton.textContent = 'Explain';
+            }
+        });
+    }
+
+    // Event listener for closing the main page's flashcard study modal
+    const closeFlashcardStudyModalBtnMain = document.getElementById('closeFlashcardModalBtn-main');
+    if (closeFlashcardStudyModalBtnMain) {
+        closeFlashcardStudyModalBtnMain.addEventListener('click', () => {
+            toggleElementVisibility('flashcardStudyModal-main', false);
+        });
+    }
+    
+    // Event listener for the main flashcard study modal backdrop click
+    const flashcardStudyModalMain = document.getElementById('flashcardStudyModal-main');
+    if (flashcardStudyModalMain) {
+        flashcardStudyModalMain.addEventListener('click', (event) => {
+            if (event.target === flashcardStudyModalMain) { // Click on modal backdrop
+                toggleElementVisibility('flashcardStudyModal-main', false);
             }
         });
     }
