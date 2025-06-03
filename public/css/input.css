@@ -113,7 +113,7 @@
     }
   }
 
-  /* Touch Device Optimizations */
+  /* Touch Device Optimization */
   @media (hover: none) {
     .flashcard-inner {
       @apply cursor-default;
