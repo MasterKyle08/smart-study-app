@@ -91,7 +91,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const createdP = document.createElement('p');
         createdP.className = 'text-xs text-slate-500 mb-1';
-        const createdDate = new Date(session.created_at);
+        // Assuming session.created_at is like "YYYY-MM-DD HH:MM:SS" (UTC from SQLite)
+        // Append 'Z' to ensure it's parsed as UTC by the Date constructor
+        const createdDate = new Date(session.created_at.includes('Z') ? session.created_at : session.created_at + 'Z');
         createdP.innerHTML = `<strong>Created:</strong> ${createdDate.toLocaleDateString()} ${createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         contentDiv.appendChild(createdP);
         
@@ -121,7 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteCardButton = document.createElement('button');
         deleteCardButton.className = 'text-xs sm:text-sm font-medium text-red-500 hover:text-red-700 focus:outline-none';
         deleteCardButton.textContent = 'Delete';
-        deleteCardButton.addEventListener('click', (e) => {
+        deleteCardButton.addEventListener('click', async (e) => {
             e.stopPropagation(); 
             sessionToDeleteId = session.id;
             cardElementToDelete = card;
@@ -156,8 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
                     }
                 } catch (error) {
-                    // Show error in a more user-friendly way if possible, e.g., using showMessage for a status div on the dashboard
-                    showMessage('loadingSessionsMessage', `Failed to delete session: ${error.message}`, 'error'); // Re-using loadingSessionsMessage for errors
+                    showMessage('loadingSessionsMessage', `Failed to delete session: ${error.message}`, 'error'); 
                 } finally {
                     toggleElementVisibility('customConfirmModal', false);
                     sessionToDeleteId = null;
@@ -276,8 +277,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if(modalTitle) modalTitle.textContent = session.original_filename || 'Session Details';
             if(modalOriginalFilename) modalOriginalFilename.textContent = session.original_filename || 'N/A';
-            if(modalCreatedAt) modalCreatedAt.textContent = new Date(session.created_at).toLocaleString();
-            if(modalUpdatedAt) modalUpdatedAt.textContent = new Date(session.updated_at).toLocaleString();
+            
+            // Ensure timestamps are parsed as UTC before converting to local
+            if(modalCreatedAt && session.created_at) modalCreatedAt.textContent = new Date(session.created_at.includes('Z') ? session.created_at : session.created_at + 'Z').toLocaleString();
+            if(modalUpdatedAt && session.updated_at) modalUpdatedAt.textContent = new Date(session.updated_at.includes('Z') ? session.updated_at : session.updated_at + 'Z').toLocaleString();
             
             currentKeywordsForModalHighlighting = []; 
             if(modalSummaryOutput) renderModalSummary(session.summary, currentKeywordsForModalHighlighting);
@@ -414,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 if(modalQuizOutput) renderQuiz(modalQuizOutput, updatedSession.quiz, currentKeywordsForModalHighlighting);
-                if(modalUpdatedAt) modalUpdatedAt.textContent = new Date(updatedSession.updated_at).toLocaleString();
+                if(modalUpdatedAt && updatedSession.updated_at) modalUpdatedAt.textContent = new Date(updatedSession.updated_at.includes('Z') ? updatedSession.updated_at : updatedSession.updated_at + 'Z').toLocaleString();
                 loadUserSessions(); 
             } catch (error) {
                 if(regenerateStatus) showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
@@ -427,10 +430,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (deleteSessionButton) { 
         deleteSessionButton.addEventListener('click', async () => {
-            if (!currentOpenSessionId) return; // Should not happen if modal is open
+            if (!currentOpenSessionId) return; 
             
-            sessionToDeleteId = currentOpenSessionId; // Set for the custom confirm modal
-            cardElementToDelete = document.querySelector(`.bg-white[data-session-id="${currentOpenSessionId}"]`); // Find the card element by data attribute
+            sessionToDeleteId = currentOpenSessionId; 
+            cardElementToDelete = document.querySelector(`.bg-white[data-session-id="${currentOpenSessionId}"]`); 
             
             if(customConfirmModalTitle) customConfirmModalTitle.textContent = "Delete Session?";
             const sessionData = window.currentDashboardSessionData || { original_filename: 'this session' };
