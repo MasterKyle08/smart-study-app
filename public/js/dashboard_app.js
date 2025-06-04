@@ -292,8 +292,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards && typeof window.renderInteractiveFlashcards === 'function') {
                             window.renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
                             if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', true);
-                        } else {
-                            alert("No flashcards to study for this session or modal content area not found.");
                         }
                     };
                 }
@@ -303,8 +301,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
             }
 
+            if(modalQuizOutput) modalQuizOutput.innerHTML = ''; // Clear previous quiz content
             if(modalQuizOutput && typeof window.renderQuiz === 'function') {
-                 window.renderQuiz(modalQuizOutput, session.quiz, currentKeywordsForModalHighlighting); 
+                 let quizDataForModal = session.quiz;
+                 if (typeof session.quiz === 'string') { // Should be pre-parsed by API, but handle just in case
+                     try { quizDataForModal = JSON.parse(session.quiz); } catch (e) { quizDataForModal = null; }
+                 }
+                 if (Array.isArray(quizDataForModal) && quizDataForModal.length > 0) {
+                    window.renderQuiz(modalQuizOutput, quizDataForModal, currentKeywordsForModalHighlighting); 
+                 } else {
+                    modalQuizOutput.innerHTML = '<p class="text-slate-500 text-sm">No quiz data available for this session.</p>';
+                 }
             } else if (modalQuizOutput) {
                 modalQuizOutput.innerHTML = '<p class="text-slate-500 text-sm">Quiz display function not available or no quiz data.</p>';
             }
@@ -314,13 +321,13 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('#sessionDetailModal .tab-link').forEach(tl => tl.removeAttribute('data-active'));
             document.querySelectorAll('#sessionDetailModal .tab-content').forEach(tc => { tc.classList.add('hidden'); tc.removeAttribute('data-active'); });
             
-            const firstTabLink = document.querySelector('#sessionDetailModal .tab-link[data-tab="modalSummaryTab"]');
-            const firstTabContent = document.getElementById('modalSummaryTab');
-            if(firstTabLink) firstTabLink.dataset.active = "true";
-            if(firstTabContent) {
-                firstTabContent.classList.remove('hidden');
-                firstTabContent.dataset.active = "true";
+            const firstTabLinkInModal = document.querySelector('#sessionDetailModal .tab-link[data-tab="modalSummaryTab"]');
+            const firstTabContentInModal = document.getElementById('modalSummaryTab');
+            if(firstTabLinkInModal) {
+                firstTabLinkInModal.dataset.active = "true";
+                if(firstTabContentInModal) firstTabContentInModal.classList.remove('hidden');
             }
+            
             if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', true);
         } catch (error) {
             if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
@@ -377,14 +384,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (confirmRegenerateButton) {
         confirmRegenerateButton.addEventListener('click', async () => {
-            if (!currentOpenSessionId) return;
+            if (!currentOpenSessionId || !window.currentDashboardSessionData) return;
             const formatsToRegen = Array.from(regenerateOptionsDiv.querySelectorAll('input[name="regenOutputFormat"]:checked')).map(cb => cb.value);
             if (formatsToRegen.length === 0) { 
                 if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error');
                 return; 
             }
 
-            let slp, ssp, sks, sap, snk; 
+            let slp, ssp, sks, sap, snk, quizOptsForRegen; 
             if (formatsToRegen.includes('summary')) {
                 slp = document.querySelector('input[name="modalSummaryLength"]:checked')?.value;
                 ssp = document.querySelector('input[name="modalSummaryStyle"]:checked')?.value;
@@ -393,6 +400,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 snk = modalSummaryNegativeKeywordsInput.value.trim();
                 currentKeywordsForModalHighlighting = sks.split(',').map(k => k.trim()).filter(k => k);
             }
+            if (formatsToRegen.includes('quiz')) {
+                quizOptsForRegen = window.currentDashboardSessionData.quiz_options || 
+                                   { questionTypes: ['multiple_choice'], numQuestions: 'ai_choice', difficulty: 'medium' };
+                // Potentially add UI here to customize quiz options for regeneration in modal
+            }
+
 
             confirmRegenerateButton.disabled = true; 
             confirmRegenerateButton.textContent = 'Regenerating...';
@@ -402,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const { updatedSession } = await apiRegenerateSessionContent(
                     currentOpenSessionId, formatsToRegen,
-                    slp, ssp, sks, sap, snk
+                    slp, ssp, sks, sap, snk, quizOptsForRegen
                 );
                 window.currentDashboardSessionData = updatedSession; 
                 if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Content regenerated successfully!', 'success');
@@ -418,7 +431,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
                 }
 
-                if(modalQuizOutput && typeof window.renderQuiz === 'function') window.renderQuiz(modalQuizOutput, updatedSession.quiz, currentKeywordsForModalHighlighting);
+                if(modalQuizOutput) modalQuizOutput.innerHTML = ''; // Clear previous
+                if(modalQuizOutput && typeof window.renderQuiz === 'function') {
+                    let regeneratedQuizData = updatedSession.quiz;
+                    if (typeof updatedSession.quiz === 'string') { // API should return parsed, but handle just in case
+                         try { regeneratedQuizData = JSON.parse(updatedSession.quiz); } catch (e) { regeneratedQuizData = null; }
+                    }
+                    if (Array.isArray(regeneratedQuizData) && regeneratedQuizData.length > 0) {
+                        window.renderQuiz(modalQuizOutput, regeneratedQuizData, currentKeywordsForModalHighlighting);
+                    } else {
+                        modalQuizOutput.innerHTML = '<p class="text-slate-500 text-sm">No quiz data available after regeneration.</p>';
+                    }
+                }
+
+
                 if(modalUpdatedAt && updatedSession.updated_at) modalUpdatedAt.textContent = new Date(updatedSession.updated_at.includes('Z') ? updatedSession.updated_at : updatedSession.updated_at + 'Z').toLocaleString();
                 loadUserSessions(); 
             } catch (error) {

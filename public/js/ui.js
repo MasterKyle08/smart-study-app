@@ -34,12 +34,6 @@ function clearMessage(elementId) {
         element.className = '';
         element.classList.add('hidden');
     }
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.textContent = '';
-        element.className = '';
-        element.classList.add('hidden');
-    }
 }
 
 function showProcessingStatus(elementId, message, showSpinner = false) {
@@ -67,28 +61,33 @@ function setCurrentYear(elementId) {
     }
 }
 
-function setupTabs(containerSelector) {
-    const container = document.querySelector(containerSelector);
-    if (!container) return;
+function setupTabs(tabLinkContainerSelector) {
+    const tabLinkContainer = document.querySelector(tabLinkContainerSelector);
+    if (!tabLinkContainer) return;
 
-    const tabLinks = container.querySelectorAll('.tab-link');
-    const tabContents = container.querySelectorAll('.tab-content');
+    const tabLinks = Array.from(tabLinkContainer.querySelectorAll('.tab-link'));
 
     tabLinks.forEach(link => {
         link.addEventListener('click', (event) => {
-            if (link.classList.contains('opacity-50')) { // Check if tab is "disabled"
+            if (link.classList.contains('opacity-50') || link.disabled) {
                 event.preventDefault();
                 return;
             }
             const targetId = link.dataset.tab;
-            
+
             tabLinks.forEach(tl => tl.removeAttribute('data-active'));
-            tabContents.forEach(tc => {
-                tc.classList.add('hidden');
-                tc.removeAttribute('data-active');
+            
+            tabLinks.forEach(tlInner => {
+                const contentId = tlInner.dataset.tab;
+                const contentEl = document.getElementById(contentId);
+                if (contentEl) {
+                    contentEl.classList.add('hidden');
+                    contentEl.removeAttribute('data-active');
+                }
             });
             
             link.dataset.active = "true";
+            
             const targetContent = document.getElementById(targetId);
             if (targetContent) {
                 targetContent.classList.remove('hidden');
@@ -101,7 +100,6 @@ function setupTabs(containerSelector) {
 function processTextForDisplay(text, keywordsToHighlight = []) {
     if (!text) return '';
     let processedText = text
-    let processedText = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -111,13 +109,35 @@ function processTextForDisplay(text, keywordsToHighlight = []) {
     if (keywordsToHighlight && keywordsToHighlight.length > 0) {
         const keywordPattern = new RegExp(`(${keywordsToHighlight.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
         processedText = processedText.replace(keywordPattern, '<span class="highlighted-keyword">$1</span>');
-        const keywordPattern = new RegExp(`(${keywordsToHighlight.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-        processedText = processedText.replace(keywordPattern, '<span class="highlighted-keyword">$1</span>');
     }
     return processedText;
 }
-    return processedText;
+
+function updateNav(isLoggedIn, userEmail = '') {
+    const loginNavButton = document.getElementById('loginNavButton');
+    const registerNavButton = document.getElementById('registerNavButton');
+    const dashboardNavButton = document.getElementById('dashboardNavButton');
+    const logoutNavButton = document.getElementById('logoutNavButton');
+    const userActionsSection = document.getElementById('userActions');
+    const userEmailSpan = document.getElementById('userEmail');
+
+    if (isLoggedIn) {
+        if (loginNavButton) loginNavButton.classList.add('hidden');
+        if (registerNavButton) registerNavButton.classList.add('hidden');
+        if (dashboardNavButton) dashboardNavButton.classList.remove('hidden');
+        if (logoutNavButton) logoutNavButton.classList.remove('hidden');
+        if (userActionsSection) userActionsSection.classList.remove('hidden');
+        if (userEmailSpan) userEmailSpan.textContent = userEmail;
+    } else {
+        if (loginNavButton) loginNavButton.classList.remove('hidden');
+        if (registerNavButton) registerNavButton.classList.remove('hidden');
+        if (dashboardNavButton) dashboardNavButton.classList.add('hidden');
+        if (logoutNavButton) logoutNavButton.classList.add('hidden');
+        if (userActionsSection) userActionsSection.classList.add('hidden');
+        if (userEmailSpan) userEmailSpan.textContent = '';
+    }
 }
+
 
 function displayResults(results) {
     const resultsSection = document.getElementById('resultsSection');
@@ -129,9 +149,9 @@ function displayResults(results) {
     const summaryTabContent = document.getElementById('summaryTab');
     const flashcardsTabContent = document.getElementById('flashcardsTab');
     const quizTabContent = document.getElementById('quizTab');
-    const summaryTabLink = document.querySelector('.tab-link[data-tab="summaryTab"]');
-    const flashcardsTabLink = document.querySelector('.tab-link[data-tab="flashcardsTab"]');
-    const quizTabLink = document.querySelector('.tab-link[data-tab="quizTab"]');
+    const summaryTabLink = document.querySelector('#resultsSection .tab-link[data-tab="summaryTab"]');
+    const flashcardsTabLink = document.querySelector('#resultsSection .tab-link[data-tab="flashcardsTab"]');
+    const quizTabLink = document.querySelector('#resultsSection .tab-link[data-tab="quizTab"]');
 
 
     if (!resultsSection) return;
@@ -139,7 +159,7 @@ function displayResults(results) {
     window.lastProcessedResults = results; 
     window.currentExtractedTextForQuiz = results.extractedText || window.currentExtractedTextForQuiz;
 
-    let firstAvailableTab = null;
+    let firstAvailableTabLink = null;
 
     if (summaryOutput && results.summary) {
         renderSummary(summaryOutput, results.summary);
@@ -147,7 +167,7 @@ function displayResults(results) {
         if (summaryTabLink) {
             summaryTabLink.classList.remove('opacity-50', 'cursor-not-allowed', 'hidden');
             summaryTabLink.disabled = false;
-            if (!firstAvailableTab) firstAvailableTab = summaryTabLink;
+            if (!firstAvailableTabLink) firstAvailableTabLink = summaryTabLink;
         }
     } else {
         if (summaryTabContent) summaryTabContent.classList.add('hidden');
@@ -173,7 +193,7 @@ function displayResults(results) {
          if (flashcardsTabLink) {
             flashcardsTabLink.classList.remove('opacity-50', 'cursor-not-allowed', 'hidden');
             flashcardsTabLink.disabled = false;
-            if (!firstAvailableTab) firstAvailableTab = flashcardsTabLink;
+            if (!firstAvailableTabLink) firstAvailableTabLink = flashcardsTabLink;
         }
     } else {
         if (launchFlashcardModalBtn) launchFlashcardModalBtn.classList.add('hidden');
@@ -201,7 +221,7 @@ function displayResults(results) {
         if (quizTabLink) {
             quizTabLink.classList.remove('opacity-50', 'cursor-not-allowed', 'hidden');
             quizTabLink.disabled = false;
-            if (!firstAvailableTab) firstAvailableTab = quizTabLink;
+            if (!firstAvailableTabLink) firstAvailableTabLink = quizTabLink;
         }
         initializeQuizSystem();
     } else {
@@ -220,10 +240,14 @@ function displayResults(results) {
     }
     
     const allTabLinks = document.querySelectorAll('#resultsSection .tab-link');
-    allTabLinks.forEach(tl => tl.removeAttribute('data-active')); // Deactivate all first
+    allTabLinks.forEach(tl => {
+        tl.removeAttribute('data-active');
+        const contentPane = document.getElementById(tl.dataset.tab);
+        if (contentPane) contentPane.classList.add('hidden');
+    }); 
     
-    if (firstAvailableTab) {
-        firstAvailableTab.click();
+    if (firstAvailableTabLink) {
+        firstAvailableTabLink.click(); // This will activate the tab and show its content
     } else {
         resultsSection.innerHTML = '<p class="text-center text-slate-500 p-6">No materials were generated. Please try different options or a different file.</p>';
     }
@@ -263,75 +287,7 @@ function renderSummary(container, summaryText) {
             sectionContentHtml += line + '\n';
         }
     });
-    lines.forEach(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine.startsWith('### ')) {
-            firstHeadingFound = true;
-            if (currentSectionDetails) {
-                const contentDiv = document.createElement('div');
-                contentDiv.className = 'details-accordion-content';
-                contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), window.currentKeywordsForHighlighting || []);
-                currentSectionDetails.appendChild(contentDiv);
-                container.appendChild(currentSectionDetails);
-            }
-            currentSectionDetails = document.createElement('details');
-            currentSectionDetails.className = 'details-accordion';
-            currentSectionDetails.open = true;
-            const summaryTitle = document.createElement('summary');
-            summaryTitle.className = 'details-accordion-summary';
-            summaryTitle.innerHTML = processTextForDisplay(trimmedLine.substring(4), window.currentKeywordsForHighlighting || []);
-            currentSectionDetails.appendChild(summaryTitle);
-            sectionContentHtml = '';
-        } else {
-            sectionContentHtml += line + '\n';
-        }
-    });
 
-    if (firstHeadingFound && currentSectionDetails) {
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'details-accordion-content';
-        contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), window.currentKeywordsForHighlighting || []);
-        currentSectionDetails.appendChild(contentDiv);
-        container.appendChild(currentSectionDetails);
-    } else if (sectionContentHtml.trim()) {
-        const currentContentLines = sectionContentHtml.trim().split('\n');
-        const isBulleted = currentContentLines.some(l => l.trim().startsWith('* ') || l.trim().startsWith('- '));
-        
-        if (isBulleted) {
-            let firstBulletIdx = currentContentLines.findIndex(l => l.trim().startsWith('* ') || l.trim().startsWith('- '));
-            const relevantLines = firstBulletIdx !== -1 ? currentContentLines.slice(firstBulletIdx) : [];
-            
-            if (relevantLines.length > 0) {
-                const ul = document.createElement('ul');
-                ul.className = 'list-disc list-inside space-y-1 pl-1';
-                relevantLines.forEach(l => {
-                    const trimmedL = l.trim();
-                    if (trimmedL.startsWith('* ') || trimmedL.startsWith('- ')) {
-                        const li = document.createElement('li');
-                        li.innerHTML = processTextForDisplay(trimmedL.substring(2), window.currentKeywordsForHighlighting || []);
-                        ul.appendChild(li);
-                    } else if (trimmedL) {
-                        const li = document.createElement('li');
-                        li.innerHTML = processTextForDisplay(trimmedL, window.currentKeywordsForHighlighting || []);
-                        ul.appendChild(li);
-                    }
-                });
-                container.appendChild(ul);
-            }
-        } else {
-            container.innerHTML = processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), window.currentKeywordsForHighlighting || []);
-        }
-    }
-
-    if (container.innerHTML.trim() !== "") {
-        const explainInstruction = document.getElementById('explainInstruction');
-        if (explainInstruction) explainInstruction.classList.remove('hidden');
-    }
-}
-
-function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight = [], context = 'main') {
-    if (!container || !Array.isArray(flashcards) || flashcards.length === 0) {
-        container.innerHTML = '<p class="text-slate-500 text-center">No flashcards available.</p>';
     if (firstHeadingFound && currentSectionDetails) {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'details-accordion-content';
@@ -430,9 +386,6 @@ function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight 
                     <label for="flashcardAnswer-${context}" class="block text-sm font-medium text-slate-700 mb-1">Your Answer:</label>
                     <textarea id="flashcardAnswer-${context}" class="form-textarea w-full text-sm rounded-lg border-slate-300 shadow-sm" rows="2" placeholder="Type your answer here..."></textarea>
                     <button onclick="checkFlashcardAnswer('${context}')" class="mt-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Check Answer</button>
-                    <label for="flashcardAnswer-${context}" class="block text-sm font-medium text-slate-700 mb-1">Your Answer:</label>
-                    <textarea id="flashcardAnswer-${context}" class="form-textarea w-full text-sm rounded-lg border-slate-300 shadow-sm" rows="2" placeholder="Type your answer here..."></textarea>
-                    <button onclick="checkFlashcardAnswer('${context}')" class="mt-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Check Answer</button>
                 </div>
                 <div>
                     <label for="flashcardQuestion-${context}" class="block text-sm font-medium text-slate-700 mb-1">Ask a Question:</label>
@@ -520,9 +473,6 @@ function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight 
         }
 
         try {
-            const response = await apiFlashcardInteract(flashcards[currentCardIndex], 'submit_answer', userAnswer);
-            showFeedback(response.feedback);
-            answerInput.value = '';
             const response = await apiFlashcardInteract(flashcards[currentCardIndex], 'submit_answer', userAnswer);
             showFeedback(response.feedback);
             answerInput.value = '';
@@ -1304,6 +1254,8 @@ window.processTextForDisplay = processTextForDisplay;
 window.displayResults = displayResults;
 window.renderSummary = renderSummary;
 window.renderInteractiveFlashcards = renderInteractiveFlashcards;
+window.updateNav = updateNav;
+
 
 window.initializeQuizSystem = initializeQuizSystem;
 window.handleStartQuiz = handleStartQuiz;
