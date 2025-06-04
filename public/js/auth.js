@@ -149,8 +149,5 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         updateNav(false);
     }
-    // Call updateAuthMode once initially to set up the toggle link listener correctly
-    // if the modal might be visible on load (though it's initially hidden).
-    // This is more for robustness if the initial HTML for the toggle is ever removed.
     updateAuthMode(); 
 });
