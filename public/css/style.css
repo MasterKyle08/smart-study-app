@@ -4828,6 +4828,11 @@ body {
   --tw-ring-color: rgb(99 102 241 / var(--tw-ring-opacity, 1));
 }
 
+.focus\:ring-orange-400:focus {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(251 146 60 / var(--tw-ring-opacity, 1));
+}
+
 .focus\:ring-red-400:focus {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(248 113 113 / var(--tw-ring-opacity, 1));
@@ -4851,11 +4856,6 @@ body {
 .focus\:ring-slate-500:focus {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(100 116 139 / var(--tw-ring-opacity, 1));
-}
-
-.focus\:ring-orange-400:focus {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgb(251 146 60 / var(--tw-ring-opacity, 1));
 }
 
 .focus\:ring-opacity-75:focus {
