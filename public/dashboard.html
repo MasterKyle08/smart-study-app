@@ -64,7 +64,9 @@
                     </div>
                     <div id="modalQuizTab" class="tab-content hidden">
                         <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Quiz</h4>
-                        <div id="modalQuizOutput" class="output-box quiz-container space-y-4"></div>
+                        <div id="modalQuizOutput" class="output-box quiz-container space-y-4">
+                             {/* Static quiz content will be rendered here by JS if available, or a message */}
+                        </div>
                     </div>
                     <div id="modalOriginalTextTab" class="tab-content hidden">
                         <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Original Extracted Text</h4>
@@ -126,7 +128,7 @@
         <div class="container mx-auto px-4"><p>&copy; <span id="currentYearDashboard"></span> Smart Study AI.</p></div>
     </footer>
     <script src="js/api.js"></script>
-    <script src="js/ui.js"></script>
+    <script src="js/ui.js"></script> {/* Ensure ui.js is loaded before dashboard_app.js */}
     <script src="js/dashboard_app.js"></script>
 </body>
 </html>

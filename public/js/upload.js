@@ -4,21 +4,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const processButton = document.getElementById('processButton');
     const filePreviewContainer = document.getElementById('filePreviewContainer');
     const summaryOptionsGroup = document.getElementById('summaryOptionsGroup');
+    const quizOptionsGroup = document.getElementById('quizOptionsGroup'); 
     
     let filesToProcess = []; 
 
-    if (!dropZone || !fileInput || !processButton || !filePreviewContainer || !summaryOptionsGroup) {
+    if (!dropZone || !fileInput || !processButton || !filePreviewContainer || !summaryOptionsGroup || !quizOptionsGroup) {
+        console.error('One or more essential UI elements are missing from the DOM.');
         return;
     }
 
     const outputFormatCheckboxes = document.querySelectorAll('input[name="outputFormat"]');
-    function toggleSummaryOptionsVisibility() {
+    function toggleOptionsVisibility() {
         const summarySelected = document.querySelector('input[name="outputFormat"][value="summary"]').checked;
+        const quizSelected = document.querySelector('input[name="outputFormat"][value="quiz"]').checked;
         const allSelected = document.querySelector('input[name="outputFormat"][value="all"]').checked;
+        
         summaryOptionsGroup.classList.toggle('hidden', !(summarySelected || allSelected));
+        quizOptionsGroup.classList.toggle('hidden', !(quizSelected || allSelected));
     }
-    outputFormatCheckboxes.forEach(checkbox => checkbox.addEventListener('change', toggleSummaryOptionsVisibility));
-    toggleSummaryOptionsVisibility();
+    outputFormatCheckboxes.forEach(checkbox => checkbox.addEventListener('change', toggleOptionsVisibility));
+    toggleOptionsVisibility(); 
+
 
     dropZone.addEventListener('dragover', (event) => {
         event.preventDefault();
@@ -55,10 +61,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!filesToProcess.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified)) {
                     filesToProcess.push(file);
                 } else {
-                    showMessage('processingStatus', `File "${file.name}" is already added.`, 'error');
+                    if (typeof window.showMessage === 'function') {
+                        window.showMessage('processingStatus', `File "${file.name}" is already added.`, 'error');
+                    }
                 }
             } else {
-                showMessage('processingStatus', `Invalid file: ${file.name}. Please upload JPG, PNG, PDF, or TXT files under 10MB.`, 'error');
+                 if (typeof window.showMessage === 'function') {
+                    window.showMessage('processingStatus', `Invalid file: ${file.name}. Please upload JPG, PNG, PDF, or TXT files under 10MB.`, 'error');
+                }
             }
         });
         renderFilePreviews();
@@ -80,13 +90,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         filesToProcess.forEach((file, index) => {
             const fileDiv = document.createElement('div');
-            fileDiv.className = 'bg-slate-100 p-3 rounded-md shadow flex justify-between items-center text-sm text-slate-700';
+            fileDiv.className = 'bg-slate-100 p-2.5 rounded-md shadow-sm border border-slate-200 flex justify-between items-center text-xs sm:text-sm text-slate-700';
             fileDiv.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
             
             const removeButton = document.createElement('button');
             removeButton.innerHTML = '&times;';
             removeButton.title = 'Remove file';
-            removeButton.className = 'ml-3 text-red-500 hover:text-red-700 text-xl leading-none focus:outline-none';
+            removeButton.className = 'ml-2 sm:ml-3 text-red-500 hover:text-red-700 text-lg sm:text-xl leading-none focus:outline-none';
             removeButton.addEventListener('click', () => {
                 filesToProcess.splice(index, 1);
                 renderFilePreviews();
@@ -104,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function extractTextFromFile(file) {
-        showProcessingStatus(`Extracting text from ${file.name}...`, true);
+        if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Extracting text from ${file.name}...`, true);
         
         if (file.type === 'text/plain') {
             return new Promise((resolve, reject) => {
@@ -125,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
                         let fullText = '';
                         for (let i = 1; i <= pdf.numPages; i++) {
-                            showProcessingStatus(`Processing PDF page ${i}/${pdf.numPages}...`, true);
+                            if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Processing PDF page ${i}/${pdf.numPages}...`, true);
                             const page = await pdf.getPage(i);
                             const textContent = await page.getTextContent();
                             fullText += textContent.items.map(item => item.str).join(' ') + '\n';
@@ -143,23 +153,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Tesseract.js library is not loaded.');
             }
             try {
-                showProcessingStatus(`Initializing OCR for ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Initializing OCR for ${file.name}...`, true);
                 const worker = await Tesseract.createWorker({
                     logger: m => {
                         if (m.status === 'recognizing text') {
                             const progress = (m.progress * 100).toFixed(0);
-                            showProcessingStatus(`OCR: Recognizing text ${progress}%...`, true);
+                           if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`OCR: Recognizing text ${progress}%...`, true);
                         } else if (m.status) {
-                             showProcessingStatus(`OCR Status: ${m.status}...`, true);
+                             if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`OCR Status: ${m.status}...`, true);
                         }
                     }
                 });
-                showProcessingStatus(`Loading language model (English) for ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Loading language model (English) for ${file.name}...`, true);
                 await worker.loadLanguage('eng');
                 await worker.initialize('eng');
-                showProcessingStatus(`Performing OCR on ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Performing OCR on ${file.name}...`, true);
                 const { data: { text } } = await worker.recognize(file);
-                showProcessingStatus(`Terminating OCR worker for ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Terminating OCR worker for ${file.name}...`, true);
                 await worker.terminate();
                 return text;
             } catch (err) {
@@ -177,13 +187,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     processButton.addEventListener('click', async () => {
+        console.log("[upload.js] Process button clicked.");
         if (filesToProcess.length === 0) {
-            showMessage('processingStatus', 'Please add files to process.', 'error');
+            if (typeof window.showMessage === 'function') window.showMessage('processingStatus', 'Please add files to process.', 'error');
             return;
         }
         const outputFormats = Array.from(document.querySelectorAll('input[name="outputFormat"]:checked')).map(cb => cb.value);
         if (outputFormats.length === 0) {
-            showMessage('processingStatus', 'Please select at least one output format.', 'error');
+            if (typeof window.showMessage === 'function') window.showMessage('processingStatus', 'Please select at least one output format.', 'error');
             return;
         }
         
@@ -193,10 +204,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryAudiencePurpose = document.getElementById('summaryAudiencePurpose').value;
         const summaryNegativeKeywords = document.getElementById('summaryNegativeKeywords').value.trim();
 
+        const quizQuestionTypes = Array.from(document.querySelectorAll('input[name="quizQuestionTypeOption"]:checked')).map(cb => cb.value);
+        const quizNumQuestions = document.querySelector('input[name="quizNumQuestionsOption"]:checked')?.value || 'ai_choice';
+        const quizDifficulty = document.querySelector('input[name="quizDifficultyOption"]:checked')?.value || 'medium';
+        const quizOptions = {
+            questionTypes: quizQuestionTypes.length > 0 ? quizQuestionTypes : ['multiple_choice'], 
+            numQuestions: quizNumQuestions,
+            difficulty: quizDifficulty
+        };
+        console.log("[upload.js] Collected Quiz Options:", quizOptions);
+
+
         processButton.disabled = true;
-        showProcessingStatus('Starting processing...', true);
+        if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('Starting processing...', true);
         document.getElementById('resultsSection').classList.add('hidden');
-        clearMessage('processingStatus'); 
+        if (typeof window.clearMessage === 'function') window.clearMessage('processingStatus'); 
         const explanationOutput = document.getElementById('explanationOutput');
         if(explanationOutput) {
              explanationOutput.classList.add('hidden');
@@ -214,14 +236,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (combinedText.trim() === "") {
-                showMessage('processingStatus', 'No text could be extracted from the selected file(s).', 'error');
+                if (typeof window.showMessage === 'function') window.showMessage('processingStatus', 'No text could be extracted from the selected file(s).', 'error');
                 processButton.disabled = false;
                 return;
             }
             
-            showProcessingStatus('Text extracted. Generating materials with AI...', true);
+            if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('Text extracted. Generating materials with AI...', true);
             window.currentKeywordsForHighlighting = summaryKeywords.split(',').map(k => k.trim()).filter(k => k);
 
+            console.log("[upload.js] Calling apiProcessContent with quizOptions:", quizOptions); 
             const results = await apiProcessContent(
                 combinedText.trim(),
                 filesToProcess.length > 1 ? "Multiple Files" : firstFileName,
@@ -231,16 +254,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 summaryStylePreference,
                 summaryKeywords, 
                 summaryAudiencePurpose,
-                summaryNegativeKeywords 
+                summaryNegativeKeywords,
+                quizOptions 
             );
-            displayResults(results); 
-            hideProcessingStatus();
+            console.log("[upload.js] Results from apiProcessContent:", JSON.stringify(results, null, 2)); 
+            if (typeof window.displayResults === 'function') window.displayResults(results); 
+            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus();
             filesToProcess = []; 
             renderFilePreviews();
         } catch (error) {
             const message = error.data?.message || error.message || 'An error occurred during processing.';
-            showMessage('processingStatus', message, 'error');
-            hideProcessingStatus();
+            if (typeof window.showMessage === 'function') window.showMessage('processingStatus', message, 'error');
+            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus();
         } finally {
             updateProcessButtonState(); 
         }

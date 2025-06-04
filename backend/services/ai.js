@@ -212,52 +212,98 @@ ${text}`;
   }
 }
 
-async function generateQuiz(text) {
-  const prompt = `You are a helpful assistant. Based on the provided text, generate 5-10 multiple-choice quiz questions.
-Each question must have:
-1. A 'question' (string).
-2. An 'options' array of 3-4 strings representing possible answers.
-3. A 'correctAnswer' (string) which MUST be one of the strings from the 'options' array.
-Respond ONLY with a valid JSON array of objects in the following format, and nothing else:
-[
-  {
-    "question": "Example Question 1?",
-    "options": ["Option A", "Option B", "Correct Option C"],
-    "correctAnswer": "Correct Option C"
-  }
-]
-Do NOT include any explanatory text, comments, or markdown formatting before or after the JSON array.
-The JSON array should be the only content in your response.
+async function generateQuizWithOptions(text, options) {
+    const { questionTypes, numQuestions, difficulty } = options;
+    let numQuestionsPrompt = "around 7-10 questions"; // Default if 'ai_choice'
+    if (numQuestions && numQuestions !== 'ai_choice') {
+        numQuestionsPrompt = `${numQuestions} questions`;
+    }
+
+    let questionTypesPrompt = "multiple_choice (single correct answer)";
+    if (questionTypes && questionTypes.length > 0) {
+        const typeDescriptions = {
+            "multiple_choice": "multiple_choice (single correct answer, 3-4 options)",
+            "select_all": "select_all_that_apply (multiple correct answers possible from 3-5 options)",
+            "short_answer": "short_answer (requires a brief typed response)"
+        };
+        questionTypesPrompt = questionTypes.map(type => typeDescriptions[type] || type).join(', and ');
+    }
+    
+    const difficultyPrompt = difficulty ? `The difficulty level should be ${difficulty}.` : "The difficulty level should be medium.";
+
+    const prompt = `You are an AI assistant skilled in creating educational quizzes.
+Based on the provided text, generate a quiz with ${numQuestionsPrompt} of the following type(s): ${questionTypesPrompt}.
+${difficultyPrompt}
+
+For each question, provide:
+1.  "id": A unique string identifier for the question (e.g., "q1", "q2").
+2.  "questionText": The question itself (string).
+3.  "questionType": One of "multiple_choice", "select_all", "short_answer".
+4.  "options": An array of strings representing answer choices. For "short_answer", this can be an empty array or contain a hint if applicable.
+5.  "correctAnswer": 
+    - For "multiple_choice": A single string that exactly matches one of the 'options'.
+    - For "select_all": An array of strings, where each string exactly matches one or more of the 'options'.
+    - For "short_answer": A string representing the ideal short answer or key terms the user should mention.
+6.  "briefExplanation": A concise (1-2 sentences) explanation of why the correct answer is correct.
+
+Respond ONLY with a valid JSON array of these question objects. Do NOT include any other text, comments, or markdown formatting.
+Example for multiple_choice:
+{
+  "id": "mc1",
+  "questionText": "What is the capital of France?",
+  "questionType": "multiple_choice",
+  "options": ["Berlin", "Madrid", "Paris", "Rome"],
+  "correctAnswer": "Paris",
+  "briefExplanation": "Paris is the capital and most populous city of France."
+}
+Example for select_all:
+{
+  "id": "sa1",
+  "questionText": "Which of the following are primary colors?",
+  "questionType": "select_all",
+  "options": ["Red", "Green", "Blue", "Yellow", "Orange"],
+  "correctAnswer": ["Red", "Blue", "Yellow"],
+  "briefExplanation": "Primary colors are sets of colors that can be combined to make a useful range of colors."
+}
+Example for short_answer:
+{
+  "id": "short1",
+  "questionText": "What is the chemical symbol for water?",
+  "questionType": "short_answer",
+  "options": [],
+  "correctAnswer": "H2O",
+  "briefExplanation": "Water is a chemical compound consisting of two hydrogen atoms and one oxygen atom."
+}
+
 Text to process:
 ${text}`;
-  const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  const generationConfig = { maxOutputTokens: 2000 };
-  const data = await callGoogleAI(contents, generationConfig);
-  try {
-    const rawTextOutput = data.candidates[0].content.parts[0].text;
-    const jsonString = extractJsonFromString(rawTextOutput);
-    if (!jsonString) {
-        throw new Error("AI response for quiz was not in the expected JSON format or was missing.");
+
+    const contents = [{ role: "user", parts: [{ text: prompt }] }];
+    const generationConfig = { maxOutputTokens: 3500 }; // Increased for potentially more complex quiz structures
+    const data = await callGoogleAI(contents, generationConfig);
+
+    try {
+        const rawTextOutput = data.candidates[0].content.parts[0].text;
+        const jsonString = extractJsonFromString(rawTextOutput);
+        if (!jsonString) {
+            throw new Error("AI response for quiz was not in the expected JSON format or was missing.");
+        }
+        const quizArray = JSON.parse(jsonString);
+        // Add more robust validation here based on the new structure
+        if (!Array.isArray(quizArray) || !quizArray.every(q => 
+            q.id && q.questionText && q.questionType && Array.isArray(q.options) && q.correctAnswer && q.briefExplanation
+        )) {
+            throw new Error("Generated quiz JSON is not in the expected format or is missing required fields.");
+        }
+        return quizArray;
+    } catch (e) {
+        const message = e.message.includes("JSON at position")
+            ? `Failed to parse quiz from AI response: ${e.message}`
+            : e.message;
+        throw new Error(message);
     }
-    const quizArray = JSON.parse(jsonString);
-    if (!Array.isArray(quizArray) || !quizArray.every(q => 
-        typeof q === 'object' && q !== null &&
-        typeof q.question === 'string' && q.question.trim() !== '' &&
-        Array.isArray(q.options) && q.options.length >= 2 && q.options.length <= 4 &&
-        q.options.every(opt => typeof opt === 'string' && opt.trim() !== '') &&
-        typeof q.correctAnswer === 'string' && q.correctAnswer.trim() !== '' &&
-        q.options.includes(q.correctAnswer)
-    )) {
-        throw new Error("Generated quiz JSON is not in the expected format, has empty fields, or correctAnswer is invalid.");
-    }
-    return quizArray;
-  } catch (e) {
-    const message = e.message.includes("JSON at position")
-        ? `Failed to parse quiz from AI response: ${e.message}`
-        : e.message;
-    throw new Error(message);
-  }
 }
+
 
 async function explainTextSnippet(snippet) {
   if (!snippet || snippet.trim() === "") {
@@ -342,10 +388,99 @@ AI Response:`;
     return {};
 }
 
+async function getQuizAnswerFeedback(question, userAnswer) {
+    const prompt = `Question: "${question.questionText}"
+Correct Answer(s): "${Array.isArray(question.correctAnswer) ? question.correctAnswer.join('; ') : question.correctAnswer}"
+Brief Explanation for Correct Answer: "${question.briefExplanation}"
+User's Answer: "${Array.isArray(userAnswer) ? userAnswer.join('; ') : userAnswer}"
+
+You are an AI tutor. Provide concise feedback on the user's answer.
+1. State if the user's answer is "Correct!", "Incorrect.", or "Partially Correct." (for select_all type).
+2. Briefly explain why, especially if incorrect or partially correct, referencing the key concepts.
+Keep feedback under 75 words.
+Feedback:`;
+    const contents = [{ role: "user", parts: [{ text: prompt }] }];
+    const data = await callGoogleAI(contents, { maxOutputTokens: 150 });
+    return { feedback: data.candidates[0].content.parts[0].text.trim() };
+}
+
+async function getQuizQuestionDetailedExplanation(question) {
+    const prompt = `Question: "${question.questionText}"
+Correct Answer(s): "${Array.isArray(question.correctAnswer) ? question.correctAnswer.join('; ') : question.correctAnswer}"
+Initial Brief Explanation: "${question.briefExplanation}"
+
+Provide a more detailed explanation of the concept tested by this question and why the provided answer is correct. 
+Aim for clarity for a student who needs more help understanding. Keep the explanation under 150 words.
+Detailed Explanation:`;
+    const contents = [{ role: "user", parts: [{ text: prompt }] }];
+    const data = await callGoogleAI(contents, { maxOutputTokens: 250 });
+    return { explanation: data.candidates[0].content.parts[0].text.trim() };
+}
+
+async function chatAboutQuizQuestion(question, chatHistory, userQuery) {
+    let historyString = "Previous conversation about this question:\n";
+    chatHistory.forEach(msg => {
+        historyString += `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.parts[0].text}\n`;
+    });
+    const prompt = `You are an AI tutor helping a student with a quiz question.
+Quiz Question: "${question.questionText}"
+Correct Answer(s): "${Array.isArray(question.correctAnswer) ? question.correctAnswer.join('; ') : question.correctAnswer}"
+
+${chatHistory.length > 0 ? historyString : ''}
+User's new message/question: "${userQuery}"
+
+Respond concisely and helpfully to the user's new message, staying on the topic of the quiz question. Keep your response under 75 words.
+AI Response:`;
+    const contents = [{ role: "user", parts: [{ text: prompt }] }];
+    const data = await callGoogleAI(contents, { maxOutputTokens: 150 });
+    const aiTextResponse = data.candidates[0].content.parts[0].text.trim();
+    const newChatHistory = [...chatHistory, { role: "user", parts: [{ text: userQuery }] }, { role: "model", parts: [{ text: aiTextResponse }] }];
+    return { chatResponse: aiTextResponse, updatedChatHistory: newChatHistory };
+}
+
+async function regenerateQuizQuestion(originalQuestion, textContext, difficultyHint) {
+    const prompt = `Based on the following text: 
+"""
+${textContext}
+"""
+The previous question on this topic was: "${originalQuestion.questionText}" (Type: ${originalQuestion.questionType}, Correct Answer: ${Array.isArray(originalQuestion.correctAnswer) ? originalQuestion.correctAnswer.join('; ') : originalQuestion.correctAnswer}).
+
+Generate ONE new, different question that tests a similar or related concept from the text.
+The new question should be of type: "${originalQuestion.questionType}".
+The difficulty should be: "${difficultyHint || 'medium'}".
+Ensure the new question is distinct from the original.
+
+Respond ONLY with a single valid JSON object for the new question in the exact same format as the examples provided previously (id, questionText, questionType, options, correctAnswer, briefExplanation). Do not include any other text.
+New Question JSON:`;
+
+    const contents = [{ role: "user", parts: [{ text: prompt }] }];
+    const data = await callGoogleAI(contents, { maxOutputTokens: 500 });
+    try {
+        const rawTextOutput = data.candidates[0].content.parts[0].text;
+        const jsonString = extractJsonFromString(rawTextOutput);
+        if (!jsonString) {
+            throw new Error("AI response for regenerated question was not valid JSON.");
+        }
+        const newQuestion = JSON.parse(jsonString);
+        // Basic validation
+        if (!newQuestion.id || !newQuestion.questionText || !newQuestion.questionType || !Array.isArray(newQuestion.options) || !newQuestion.correctAnswer || !newQuestion.briefExplanation) {
+            throw new Error("Regenerated question JSON is missing required fields.");
+        }
+        return newQuestion;
+    } catch (e) {
+        throw new Error(`Failed to parse regenerated question: ${e.message}`);
+    }
+}
+
+
 module.exports = {
   generateSummary,
   generateFlashcards,
-  generateQuiz,
+  generateQuizWithOptions, // Updated function name
   explainTextSnippet,
   getFlashcardInteractionResponse,
+  getQuizAnswerFeedback,
+  getQuizQuestionDetailedExplanation,
+  chatAboutQuizQuestion,
+  regenerateQuizQuestion
 };

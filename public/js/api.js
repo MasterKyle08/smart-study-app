@@ -41,13 +41,13 @@ const apiRegister = (email, password) => request('/auth/register', 'POST', { ema
 const apiProcessContent = (
     extractedText, originalFilename, originalContentType, outputFormats, 
     summaryLengthPreference, summaryStylePreference, summaryKeywords, 
-    summaryAudiencePurpose, summaryNegativeKeywords
+    summaryAudiencePurpose, summaryNegativeKeywords, quizOptions
 ) => {
   const token = localStorage.getItem('authToken'); 
   return request('/study/process', 'POST', {
     extractedText, originalFilename, originalContentType, outputFormats,
     summaryLengthPreference, summaryStylePreference, summaryKeywords, 
-    summaryAudiencePurpose, summaryNegativeKeywords
+    summaryAudiencePurpose, summaryNegativeKeywords, quizOptions
   }, !!token); 
 };
 
@@ -57,7 +57,7 @@ const apiGetSessionDetails = (sessionId) => request(`/study/sessions/${sessionId
 const apiRegenerateSessionContent = (
     sessionId, outputFormats, 
     summaryLengthPreference, summaryStylePreference, summaryKeywords, 
-    summaryAudiencePurpose, summaryNegativeKeywords
+    summaryAudiencePurpose, summaryNegativeKeywords, quizOptions
 ) => {
     const body = { outputFormats };
     if (summaryLengthPreference) body.summaryLengthPreference = summaryLengthPreference;
@@ -65,6 +65,7 @@ const apiRegenerateSessionContent = (
     if (summaryKeywords !== undefined) body.summaryKeywords = summaryKeywords; 
     if (summaryAudiencePurpose) body.summaryAudiencePurpose = summaryAudiencePurpose;
     if (summaryNegativeKeywords !== undefined) body.summaryNegativeKeywords = summaryNegativeKeywords; 
+    if (quizOptions) body.quizOptions = quizOptions; // Add quiz options for regeneration
     
     return request(`/study/sessions/${sessionId}/regenerate`, 'PUT', body, true);
 };
@@ -78,5 +79,12 @@ const apiFlashcardInteract = (card, interactionType, userAnswer, userQuery, chat
         userAnswer,
         userQuery,
         chatHistory
-    }, false); // Assuming public interaction for now, or add auth if needed
+    }, false); 
 };
+
+// New Quiz API functions
+const apiGenerateQuiz = (extractedText, quizOptions) => request('/study/quiz-generate', 'POST', { extractedText, quizOptions });
+const apiGetQuizAnswerFeedback = (question, userAnswer) => request('/study/quiz-answer-feedback', 'POST', { question, userAnswer });
+const apiGetQuizQuestionDetailedExplanation = (question) => request('/study/quiz-question-explanation', 'POST', { question });
+const apiChatAboutQuizQuestion = (question, chatHistory, userQuery) => request('/study/quiz-chat', 'POST', { question, chatHistory, userQuery });
+const apiRegenerateQuizQuestion = (originalQuestion, textContext, difficultyHint) => request('/study/quiz-regenerate-question', 'POST', { originalQuestion, textContext, difficultyHint });

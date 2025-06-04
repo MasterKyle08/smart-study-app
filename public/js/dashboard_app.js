@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = 'index.html'; 
         return; 
     }
-    setupTabs('#sessionDetailModal .tabs');
+    if (typeof window.setupTabs === 'function') window.setupTabs('#sessionDetailModal .tabs');
 
     async function loadUserSessions() {
         if (!sessionsListContainer || !loadingSessionsMessage) return;
@@ -91,8 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const createdP = document.createElement('p');
         createdP.className = 'text-xs text-slate-500 mb-1';
-        // Assuming session.created_at is like "YYYY-MM-DD HH:MM:SS" (UTC from SQLite)
-        // Append 'Z' to ensure it's parsed as UTC by the Date constructor
         const createdDate = new Date(session.created_at.includes('Z') ? session.created_at : session.created_at + 'Z');
         createdP.innerHTML = `<strong>Created:</strong> ${createdDate.toLocaleDateString()} ${createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         contentDiv.appendChild(createdP);
@@ -129,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cardElementToDelete = card;
             if(customConfirmModalTitle) customConfirmModalTitle.textContent = "Delete Session?";
             if(customConfirmModalMessage) customConfirmModalMessage.textContent = `Are you sure you want to delete the session "${session.original_filename || 'Untitled Session'}"? This action cannot be undone.`;
-            if(customConfirmModal) toggleElementVisibility('customConfirmModal', true);
+            if(customConfirmModal && typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('customConfirmModal', true);
         });
         footerDiv.appendChild(deleteCardButton);
         card.appendChild(footerDiv);
@@ -142,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(customConfirmModalNo) {
         customConfirmModalNo.addEventListener('click', () => {
-            toggleElementVisibility('customConfirmModal', false);
+            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('customConfirmModal', false);
             sessionToDeleteId = null;
             cardElementToDelete = null;
         });
@@ -158,9 +156,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
                     }
                 } catch (error) {
-                    showMessage('loadingSessionsMessage', `Failed to delete session: ${error.message}`, 'error'); 
+                    if (typeof window.showMessage === 'function') window.showMessage('loadingSessionsMessage', `Failed to delete session: ${error.message}`, 'error'); 
                 } finally {
-                    toggleElementVisibility('customConfirmModal', false);
+                    if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('customConfirmModal', false);
                     sessionToDeleteId = null;
                     cardElementToDelete = null;
                 }
@@ -190,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentSectionDetails) { 
                     const contentDiv = document.createElement('div');
                     contentDiv.className = 'details-accordion-content';
-                    contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+                    contentDiv.innerHTML = window.processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
                     currentSectionDetails.appendChild(contentDiv);
                     modalSummaryOutput.appendChild(currentSectionDetails);
                 }
@@ -199,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentSectionDetails.open = true; 
                 const summaryTitle = document.createElement('summary');
                 summaryTitle.className = 'details-accordion-summary';
-                summaryTitle.innerHTML = processTextForDisplay(trimmedLine.substring(4), keywordsToHighlight); 
+                summaryTitle.innerHTML = window.processTextForDisplay(trimmedLine.substring(4), keywordsToHighlight); 
                 currentSectionDetails.appendChild(summaryTitle);
                 sectionContentHtml = ''; 
             } else {
@@ -210,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (firstHeadingFound && currentSectionDetails) {
             const contentDiv = document.createElement('div');
             contentDiv.className = 'details-accordion-content';
-            contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+            contentDiv.innerHTML = window.processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
             currentSectionDetails.appendChild(contentDiv);
             modalSummaryOutput.appendChild(currentSectionDetails);
         } else if (sectionContentHtml.trim()) { 
@@ -226,20 +224,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         const trimmedL = l.trim();
                         if (trimmedL.startsWith('* ') || trimmedL.startsWith('- ')) {
                             const li = document.createElement('li');
-                            li.innerHTML = processTextForDisplay(trimmedL.substring(2), keywordsToHighlight);
+                            li.innerHTML = window.processTextForDisplay(trimmedL.substring(2), keywordsToHighlight);
                             ul.appendChild(li);
                         } else if (trimmedL) {
                             const li = document.createElement('li');
-                            li.innerHTML = processTextForDisplay(trimmedL, keywordsToHighlight);
+                            li.innerHTML = window.processTextForDisplay(trimmedL, keywordsToHighlight);
                             ul.appendChild(li);
                         }
                     });
                     modalSummaryOutput.appendChild(ul);
                 } else { 
-                     modalSummaryOutput.innerHTML = processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+                     modalSummaryOutput.innerHTML = window.processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
                 }
              } else {
-                modalSummaryOutput.innerHTML = processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+                modalSummaryOutput.innerHTML = window.processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
              }
         }
         if (modalSummaryOutput.innerHTML.trim() !== "" && modalExplainInstruction) {
@@ -251,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentOpenSessionId = sessionId;
         if(regenerateOptionsDiv) regenerateOptionsDiv.classList.add('hidden'); 
         if(modalSummaryRegenOptionsDiv) modalSummaryRegenOptionsDiv.classList.add('hidden');
-        if(regenerateStatus) clearMessage('regenerateStatus');
+        if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
         if(modalExplanationOutput) {
              modalExplanationOutput.classList.add('hidden');
              modalExplanationOutput.innerHTML = '';
@@ -270,15 +268,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if(paragraphStyleRadio) paragraphStyleRadio.checked = true;
 
         try {
-            if(regenerateStatus) showMessage('regenerateStatus', 'Loading session details...', 'success');
+            if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Loading session details...', 'success');
             const { session } = await apiGetSessionDetails(sessionId);
             window.currentDashboardSessionData = session; 
-            if(regenerateStatus) clearMessage('regenerateStatus');
+            if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
 
             if(modalTitle) modalTitle.textContent = session.original_filename || 'Session Details';
             if(modalOriginalFilename) modalOriginalFilename.textContent = session.original_filename || 'N/A';
             
-            // Ensure timestamps are parsed as UTC before converting to local
             if(modalCreatedAt && session.created_at) modalCreatedAt.textContent = new Date(session.created_at.includes('Z') ? session.created_at : session.created_at + 'Z').toLocaleString();
             if(modalUpdatedAt && session.updated_at) modalUpdatedAt.textContent = new Date(session.updated_at.includes('Z') ? session.updated_at : session.updated_at + 'Z').toLocaleString();
             
@@ -292,9 +289,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     launchFlashcardModalBtnModal.classList.remove('hidden');
                     launchFlashcardModalBtnModal.onclick = () => { 
                         const flashcardModalContent = document.getElementById('flashcardModalContent-modal');
-                        if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards) {
-                            renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
-                            toggleElementVisibility('flashcardStudyModal-modal', true);
+                        if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards && typeof window.renderInteractiveFlashcards === 'function') {
+                            window.renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
+                            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', true);
                         } else {
                             alert("No flashcards to study for this session or modal content area not found.");
                         }
@@ -306,7 +303,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
             }
 
-            if(modalQuizOutput) renderQuiz(modalQuizOutput, session.quiz, currentKeywordsForModalHighlighting); 
+            if(modalQuizOutput && typeof window.renderQuiz === 'function') {
+                 window.renderQuiz(modalQuizOutput, session.quiz, currentKeywordsForModalHighlighting); 
+            } else if (modalQuizOutput) {
+                modalQuizOutput.innerHTML = '<p class="text-slate-500 text-sm">Quiz display function not available or no quiz data.</p>';
+            }
+
             if(modalOriginalTextOutput) modalOriginalTextOutput.textContent = session.extracted_text || 'Original text not available.';
             
             document.querySelectorAll('#sessionDetailModal .tab-link').forEach(tl => tl.removeAttribute('data-active'));
@@ -319,9 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 firstTabContent.classList.remove('hidden');
                 firstTabContent.dataset.active = "true";
             }
-            toggleElementVisibility('sessionDetailModal', true);
+            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', true);
         } catch (error) {
-            if(regenerateStatus) clearMessage('regenerateStatus');
+            if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
             alert(`Error: ${error.message || 'Could not load session details.'}`);
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
@@ -333,7 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (closeModalButton) {
         closeModalButton.addEventListener('click', () => {
-            toggleElementVisibility('sessionDetailModal', false);
+            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
             currentOpenSessionId = null;
             window.currentDashboardSessionData = null;
         });
@@ -341,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sessionDetailModal) {
          sessionDetailModal.addEventListener('click', (event) => {
             if (event.target === sessionDetailModal) {
-                toggleElementVisibility('sessionDetailModal', false);
+                if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
                 currentOpenSessionId = null;
                 window.currentDashboardSessionData = null;
             }
@@ -351,14 +353,14 @@ document.addEventListener('DOMContentLoaded', () => {
      const closeFlashcardStudyModalBtnModal = document.getElementById('closeFlashcardModalBtn-modal');
      if(closeFlashcardStudyModalBtnModal) {
         closeFlashcardStudyModalBtnModal.addEventListener('click', () => {
-            toggleElementVisibility('flashcardStudyModal-modal', false);
+            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', false);
         });
      }
 
     if (regenerateButton) {
         regenerateButton.addEventListener('click', () => {
             if(regenerateOptionsDiv) regenerateOptionsDiv.classList.toggle('hidden');
-            if(regenerateStatus) clearMessage('regenerateStatus');
+            if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
             const summaryCheckbox = document.querySelector('input[name="regenOutputFormat"][value="summary"]');
             if (summaryCheckbox && !summaryCheckbox.checked && modalSummaryRegenOptionsDiv) {
                 modalSummaryRegenOptionsDiv.classList.add('hidden');
@@ -378,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!currentOpenSessionId) return;
             const formatsToRegen = Array.from(regenerateOptionsDiv.querySelectorAll('input[name="regenOutputFormat"]:checked')).map(cb => cb.value);
             if (formatsToRegen.length === 0) { 
-                if(regenerateStatus) showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error');
                 return; 
             }
 
@@ -394,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             confirmRegenerateButton.disabled = true; 
             confirmRegenerateButton.textContent = 'Regenerating...';
-            if(regenerateStatus) showMessage('regenerateStatus', 'Regenerating content, please wait...', 'success');
+            if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Regenerating content, please wait...', 'success');
             if(modalExplanationOutput) modalExplanationOutput.classList.add('hidden');
 
             try {
@@ -403,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     slp, ssp, sks, sap, snk
                 );
                 window.currentDashboardSessionData = updatedSession; 
-                if(regenerateStatus) showMessage('regenerateStatus', 'Content regenerated successfully!', 'success');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Content regenerated successfully!', 'success');
                 if(modalSummaryOutput) renderModalSummary(updatedSession.summary, currentKeywordsForModalHighlighting);
                 
                 if (updatedSession.flashcards && updatedSession.flashcards.length > 0) {
@@ -416,11 +418,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
                 }
 
-                if(modalQuizOutput) renderQuiz(modalQuizOutput, updatedSession.quiz, currentKeywordsForModalHighlighting);
+                if(modalQuizOutput && typeof window.renderQuiz === 'function') window.renderQuiz(modalQuizOutput, updatedSession.quiz, currentKeywordsForModalHighlighting);
                 if(modalUpdatedAt && updatedSession.updated_at) modalUpdatedAt.textContent = new Date(updatedSession.updated_at.includes('Z') ? updatedSession.updated_at : updatedSession.updated_at + 'Z').toLocaleString();
                 loadUserSessions(); 
             } catch (error) {
-                if(regenerateStatus) showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
             } finally {
                 confirmRegenerateButton.disabled = false; 
                 confirmRegenerateButton.textContent = 'Confirm Regeneration';
@@ -438,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(customConfirmModalTitle) customConfirmModalTitle.textContent = "Delete Session?";
             const sessionData = window.currentDashboardSessionData || { original_filename: 'this session' };
             if(customConfirmModalMessage) customConfirmModalMessage.textContent = `Are you sure you want to delete the session "${sessionData.original_filename || 'Untitled Session'}"? This action cannot be undone.`;
-            if(customConfirmModal) toggleElementVisibility('customConfirmModal', true);
+            if(customConfirmModal && typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('customConfirmModal', true);
         });
     }
     
@@ -469,15 +471,15 @@ document.addEventListener('DOMContentLoaded', () => {
             modalExplainButton.disabled = true; modalExplainButton.textContent = 'Explaining...';
             modalExplanationOutput.classList.add('hidden'); modalExplanationOutput.innerHTML = '';
             try {
-                if(regenerateStatus) showMessage('regenerateStatus', 'Getting explanation...', 'success'); 
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Getting explanation...', 'success'); 
                 const { explanation } = await apiExplainSnippet(selectedText);
-                modalExplanationOutput.innerHTML = processTextForDisplay(explanation); 
+                modalExplanationOutput.innerHTML = window.processTextForDisplay(explanation); 
                 modalExplanationOutput.classList.remove('hidden');
-                if(regenerateStatus) clearMessage('regenerateStatus');
+                if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
             } catch (error) {
                 modalExplanationOutput.innerHTML = `<p class="error-message p-3 rounded-md">Error: ${error.message || 'Could not get explanation.'}</p>`;
                 modalExplanationOutput.classList.remove('hidden');
-                if(regenerateStatus) showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
             } finally {
                 modalExplainButton.disabled = false; modalExplainButton.textContent = 'Explain';
             }
@@ -493,6 +495,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    setCurrentYear('currentYearDashboard');
+    if(typeof window.setCurrentYear === 'function') window.setCurrentYear('currentYearDashboard');
     loadUserSessions();
 });

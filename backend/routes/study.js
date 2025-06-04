@@ -7,6 +7,9 @@ const authenticateToken = require('../middleware/auth');
 const router = express.Router();
 
 router.post('/process', async (req, res) => {
+  console.log("--- HIT /api/study/process ROUTE ---"); 
+  console.log("Request Body for /process:", JSON.stringify(req.body, null, 2)); 
+
   let userId = null;
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -18,7 +21,9 @@ router.post('/process', async (req, res) => {
       const User = require('../models/User'); 
       const userExists = await User.findById(decoded.userId);
       if (userExists) userId = decoded.userId;
-    } catch (err) { /* Ignore error, proceed as anonymous */ }
+    } catch (err) { 
+        console.warn("[/process] JWT verification failed or user not found, proceeding as anonymous:", err.message);
+    }
   }
 
   try {
@@ -27,14 +32,17 @@ router.post('/process', async (req, res) => {
         summaryLengthPreference, summaryStylePreference,
         summaryKeywords: summaryKeywordsString, 
         summaryAudiencePurpose,
-        summaryNegativeKeywords: summaryNegativeKeywordsString 
+        summaryNegativeKeywords: summaryNegativeKeywordsString,
+        quizOptions 
     } = req.body;
 
     if (!extractedText || !originalFilename || !originalContentType || !outputFormats) {
-      return res.status(400).json({ message: 'Missing required fields.' });
+      console.error("[/process] Validation Error: Missing required fields.");
+      return res.status(400).json({ message: 'Missing required fields for processing.' });
     }
     if (!Array.isArray(outputFormats) || outputFormats.length === 0) {
-        return res.status(400).json({ message: 'outputFormats must be a non-empty array.' });
+      console.error("[/process] Validation Error: outputFormats must be a non-empty array.");
+      return res.status(400).json({ message: 'outputFormats must be a non-empty array.' });
     }
 
     const summaryKeywordsArray = summaryKeywordsString 
@@ -42,15 +50,25 @@ router.post('/process', async (req, res) => {
     const summaryNegativeKeywordsArray = summaryNegativeKeywordsString 
         ? summaryNegativeKeywordsString.split(',').map(k => k.trim()).filter(k => k) : [];
 
+    console.log("[/process] Calling fileService.processUploadedText...");
     const results = await fileService.processUploadedText({
-      extractedText, outputFormats, originalFilename, originalContentType, userId, 
-      summaryLengthPreference, summaryStylePreference,
+      extractedText, 
+      outputFormats, 
+      originalFilename, 
+      originalContentType, 
+      userId, 
+      summaryLengthPreference, 
+      summaryStylePreference,
       summaryKeywords: summaryKeywordsArray,
       summaryAudiencePurpose,
-      summaryNegativeKeywords: summaryNegativeKeywordsArray
+      summaryNegativeKeywords: summaryNegativeKeywordsArray,
+      quizOptions 
     });
+    
+    console.log("[/process] fileService.processUploadedText successful. Sending response.");
     res.status(200).json(results);
   } catch (error) {
+    console.error("[/process] Error in route handler:", error.message, error.stack ? error.stack.substring(0, 300) : '', error.originalError ? `Original Error: ${error.originalError.message}` : '');
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process content.' });
   }
 });
@@ -68,6 +86,72 @@ router.post('/flashcard-interact', async (req, res) => {
     }
 });
 
+router.post('/quiz-generate', async (req, res) => {
+    try {
+        const { extractedText, quizOptions } = req.body;
+        if (!extractedText || !quizOptions) {
+            return res.status(400).json({ message: 'Extracted text and quiz options are required.' });
+        }
+        const quizData = await aiService.generateQuizWithOptions(extractedText, quizOptions);
+        res.status(200).json({ quiz: quizData });
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to generate quiz.' });
+    }
+});
+
+router.post('/quiz-answer-feedback', async (req, res) => {
+    try {
+        const { question, userAnswer } = req.body;
+        if (!question || userAnswer === undefined) { 
+            return res.status(400).json({ message: 'Question and user answer are required.' });
+        }
+        const feedback = await aiService.getQuizAnswerFeedback(question, userAnswer);
+        res.status(200).json(feedback);
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to get answer feedback.' });
+    }
+});
+
+router.post('/quiz-question-explanation', async (req, res) => {
+    try {
+        const { question } = req.body;
+        if (!question) {
+            return res.status(400).json({ message: 'Question data is required.' });
+        }
+        const explanation = await aiService.getQuizQuestionDetailedExplanation(question);
+        res.status(200).json(explanation);
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to get detailed explanation.' });
+    }
+});
+
+router.post('/quiz-chat', async (req, res) => {
+    try {
+        const { question, chatHistory, userQuery } = req.body;
+        if (!question || !chatHistory || !userQuery) {
+            return res.status(400).json({ message: 'Question, chat history, and user query are required.' });
+        }
+        const chatResponse = await aiService.chatAboutQuizQuestion(question, chatHistory, userQuery);
+        res.status(200).json(chatResponse);
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process quiz chat.' });
+    }
+});
+
+router.post('/quiz-regenerate-question', async (req, res) => {
+    try {
+        const { originalQuestion, textContext, difficultyHint } = req.body;
+        if (!originalQuestion || !textContext) {
+            return res.status(400).json({ message: 'Original question and text context are required.' });
+        }
+        const newQuestion = await aiService.regenerateQuizQuestion(originalQuestion, textContext, difficultyHint);
+        res.status(200).json({ question: newQuestion });
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to regenerate quiz question.' });
+    }
+});
+
+
 router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
   try {
     const sessionId = parseInt(req.params.id, 10);
@@ -77,7 +161,8 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
         outputFormats, summaryLengthPreference, summaryStylePreference,
         summaryKeywords: summaryKeywordsString,
         summaryAudiencePurpose,
-        summaryNegativeKeywords: summaryNegativeKeywordsString 
+        summaryNegativeKeywords: summaryNegativeKeywordsString,
+        quizOptions 
     } = req.body;
 
     if (!Array.isArray(outputFormats) || outputFormats.length === 0) {
@@ -108,7 +193,8 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
       regeneratedResults.flashcards = JSON.stringify(flashcardsArray);
     }
     if (outputFormats.includes('quiz') || outputFormats.includes('all')) {
-      const quizArray = await aiService.generateQuiz(existingSession.extracted_text);
+      const currentQuizOptions = quizOptions || { questionTypes: ['multiple_choice'], numQuestions: 'ai_choice', difficulty: 'medium' };
+      const quizArray = await aiService.generateQuizWithOptions(existingSession.extracted_text, currentQuizOptions);
       regeneratedResults.quiz = JSON.stringify(quizArray);
     }
     
