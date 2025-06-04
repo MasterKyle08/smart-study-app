@@ -95,7 +95,7 @@
                     <div>
                         <p class="text-slate-600 font-medium mb-2 text-sm">Question Types (select at least one):</p>
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                            <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="multiple_choice" checked class="form-checkbox quiz-option-input"> Multiple Choice</label>
+                            <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="multiple_choice" class="form-checkbox quiz-option-input"> Multiple Choice</label>
                             <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="select_all" class="form-checkbox quiz-option-input"> Select All That Apply</label>
                             <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="short_answer" class="form-checkbox quiz-option-input"> Short Answer</label>
                         </div>
@@ -103,7 +103,7 @@
                     <div>
                         <p class="text-slate-600 font-medium mb-2 text-sm">Number of Questions:</p>
                         <div class="flex flex-wrap gap-3">
-                            <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="ai_choice" checked class="form-radio quiz-option-input"> AI Choice</label>
+                            <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="ai_choice" class="form-radio quiz-option-input"> AI Choice</label>
                             <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="5" class="form-radio quiz-option-input"> 5</label>
                             <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="10" class="form-radio quiz-option-input"> 10</label>
                             <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="15" class="form-radio quiz-option-input"> 15</label>
@@ -113,7 +113,7 @@
                         <p class="text-slate-600 font-medium mb-2 text-sm">Difficulty Level:</p>
                         <div class="flex flex-wrap gap-3">
                             <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="easy" class="form-radio quiz-option-input"> Easy</label>
-                            <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="medium" checked class="form-radio quiz-option-input"> Medium</label>
+                            <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="medium" class="form-radio quiz-option-input"> Medium</label>
                             <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="hard" class="form-radio quiz-option-input"> Hard</label>
                         </div>
                     </div>
@@ -135,7 +135,7 @@
                 <button class="tab-link" data-tab="quizTab">Quiz</button>
             </div>
 
-            <div id="summaryTab" class="tab-content">
+            <div id="summaryTab" class="tab-content hidden">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
                     <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-2 sm:mb-0">Summary <small id="explainInstruction" class="hidden text-xs sm:text-sm text-slate-500 font-normal">(Select text to explain)</small></h3>
                     <div class="actions space-x-2 flex-shrink-0">
@@ -165,7 +165,7 @@
 
             <div id="quizTab" class="tab-content hidden">
                 <div id="quizSetupView">
-                    <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-4">Quiz</h3>
+                    <h3 class="text-xl sm:text-2xl font-semibold text-slate-700 mb-4">Quiz Setup</h3>
                     <p id="quizReadyMessage" class="text-slate-600 mb-4 text-sm">Your quiz will appear here once generated. You can customize options below to generate a new quiz if needed.</p>
                     <button id="startQuizBtn" class="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-150 mb-6" disabled>Start Quiz</button>
                     
@@ -175,7 +175,7 @@
                             <div>
                                 <p class="text-slate-600 font-medium mb-2 text-sm">Question Types (select at least one):</p>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                    <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="multiple_choice" checked class="form-checkbox quiz-option-input"> Multiple Choice</label>
+                                    <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="multiple_choice" class="form-checkbox quiz-option-input"> Multiple Choice</label>
                                     <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="select_all" class="form-checkbox quiz-option-input"> Select All That Apply</label>
                                     <label class="quiz-option-label"><input type="checkbox" name="quizQuestionTypeOption" value="short_answer" class="form-checkbox quiz-option-input"> Short Answer</label>
                                 </div>
@@ -183,7 +183,7 @@
                             <div>
                                 <p class="text-slate-600 font-medium mb-2 text-sm">Number of Questions:</p>
                                 <div class="flex flex-wrap gap-3">
-                                    <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="ai_choice" checked class="form-radio quiz-option-input"> AI Choice</label>
+                                    <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="ai_choice" class="form-radio quiz-option-input"> AI Choice</label>
                                     <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="5" class="form-radio quiz-option-input"> 5</label>
                                     <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="10" class="form-radio quiz-option-input"> 10</label>
                                     <label class="quiz-option-label"><input type="radio" name="quizNumQuestionsOption" value="15" class="form-radio quiz-option-input"> 15</label>
@@ -193,7 +193,7 @@
                                 <p class="text-slate-600 font-medium mb-2 text-sm">Difficulty Level:</p>
                                 <div class="flex flex-wrap gap-3">
                                     <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="easy" class="form-radio quiz-option-input"> Easy</label>
-                                    <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="medium" checked class="form-radio quiz-option-input"> Medium</label>
+                                    <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="medium" class="form-radio quiz-option-input"> Medium</label>
                                     <label class="quiz-option-label"><input type="radio" name="quizDifficultyOption" value="hard" class="form-radio quiz-option-input"> Hard</label>
                                 </div>
                             </div>
@@ -203,11 +203,9 @@
                         </div>
                     </details>
                 </div>
-                <div id="quizInterfaceContainer" class="hidden">
-                    {/* Quiz questions will be rendered here by JS */}
+                <div id="quizInterfaceContainer" class="hidden mt-6">
                 </div>
-                <div id="quizResultsContainer" class="hidden">
-                    {/* Quiz results will be rendered here by JS */}
+                <div id="quizResultsContainer" class="hidden mt-6">
                 </div>
                  <div id="quizLoadingStatus" class="mt-4 text-center text-sm"></div>
             </div>

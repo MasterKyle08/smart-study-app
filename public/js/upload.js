@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let filesToProcess = []; 
 
     if (!dropZone || !fileInput || !processButton || !filePreviewContainer || !summaryOptionsGroup || !quizOptionsGroup) {
-        console.error('One or more essential UI elements are missing from the DOM.');
         return;
     }
 
@@ -24,6 +23,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     outputFormatCheckboxes.forEach(checkbox => checkbox.addEventListener('change', toggleOptionsVisibility));
     toggleOptionsVisibility(); 
+
+    const defaultQuizTypeCheckbox = document.querySelector('#quizOptionsGroup input[name="quizQuestionTypeOption"][value="multiple_choice"]');
+    if (defaultQuizTypeCheckbox) defaultQuizTypeCheckbox.checked = true;
+    
+    const defaultQuizNumRadio = document.querySelector('#quizOptionsGroup input[name="quizNumQuestionsOption"][value="ai_choice"]');
+    if (defaultQuizNumRadio) defaultQuizNumRadio.checked = true;
+
+    const defaultQuizDifficultyRadio = document.querySelector('#quizOptionsGroup input[name="quizDifficultyOption"][value="medium"]');
+    if (defaultQuizDifficultyRadio) defaultQuizDifficultyRadio.checked = true;
 
 
     dropZone.addEventListener('dragover', (event) => {
@@ -114,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function extractTextFromFile(file) {
-        if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Extracting text from ${file.name}...`, true);
+        if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `Extracting text from ${file.name}...`, true);
         
         if (file.type === 'text/plain') {
             return new Promise((resolve, reject) => {
@@ -135,7 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
                         let fullText = '';
                         for (let i = 1; i <= pdf.numPages; i++) {
-                            if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Processing PDF page ${i}/${pdf.numPages}...`, true);
+                            if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `Processing PDF page ${i}/${pdf.numPages}...`, true);
                             const page = await pdf.getPage(i);
                             const textContent = await page.getTextContent();
                             fullText += textContent.items.map(item => item.str).join(' ') + '\n';
@@ -153,23 +161,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Tesseract.js library is not loaded.');
             }
             try {
-                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Initializing OCR for ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `Initializing OCR for ${file.name}...`, true);
                 const worker = await Tesseract.createWorker({
                     logger: m => {
                         if (m.status === 'recognizing text') {
                             const progress = (m.progress * 100).toFixed(0);
-                           if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`OCR: Recognizing text ${progress}%...`, true);
+                           if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `OCR: Recognizing text ${progress}%...`, true);
                         } else if (m.status) {
-                             if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`OCR Status: ${m.status}...`, true);
+                             if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `OCR Status: ${m.status}...`, true);
                         }
                     }
                 });
-                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Loading language model (English) for ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `Loading language model (English) for ${file.name}...`, true);
                 await worker.loadLanguage('eng');
                 await worker.initialize('eng');
-                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Performing OCR on ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `Performing OCR on ${file.name}...`, true);
                 const { data: { text } } = await worker.recognize(file);
-                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus(`Terminating OCR worker for ${file.name}...`, true);
+                if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', `Terminating OCR worker for ${file.name}...`, true);
                 await worker.terminate();
                 return text;
             } catch (err) {
@@ -187,7 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     processButton.addEventListener('click', async () => {
-        console.log("[upload.js] Process button clicked.");
         if (filesToProcess.length === 0) {
             if (typeof window.showMessage === 'function') window.showMessage('processingStatus', 'Please add files to process.', 'error');
             return;
@@ -204,19 +211,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryAudiencePurpose = document.getElementById('summaryAudiencePurpose').value;
         const summaryNegativeKeywords = document.getElementById('summaryNegativeKeywords').value.trim();
 
-        const quizQuestionTypes = Array.from(document.querySelectorAll('input[name="quizQuestionTypeOption"]:checked')).map(cb => cb.value);
-        const quizNumQuestions = document.querySelector('input[name="quizNumQuestionsOption"]:checked')?.value || 'ai_choice';
-        const quizDifficulty = document.querySelector('input[name="quizDifficultyOption"]:checked')?.value || 'medium';
+        let quizQuestionTypes = Array.from(document.querySelectorAll('#quizOptionsGroup input[name="quizQuestionTypeOption"]:checked')).map(cb => cb.value);
+        if (quizQuestionTypes.length === 0) quizQuestionTypes = ['multiple_choice']; // Default if none selected
+        const quizNumQuestions = document.querySelector('#quizOptionsGroup input[name="quizNumQuestionsOption"]:checked')?.value || 'ai_choice';
+        const quizDifficulty = document.querySelector('#quizOptionsGroup input[name="quizDifficultyOption"]:checked')?.value || 'medium';
+        
         const quizOptions = {
-            questionTypes: quizQuestionTypes.length > 0 ? quizQuestionTypes : ['multiple_choice'], 
+            questionTypes: quizQuestionTypes, 
             numQuestions: quizNumQuestions,
             difficulty: quizDifficulty
         };
-        console.log("[upload.js] Collected Quiz Options:", quizOptions);
 
 
         processButton.disabled = true;
-        if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('Starting processing...', true);
+        if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', 'Starting processing...', true);
         document.getElementById('resultsSection').classList.add('hidden');
         if (typeof window.clearMessage === 'function') window.clearMessage('processingStatus'); 
         const explanationOutput = document.getElementById('explanationOutput');
@@ -240,11 +248,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 processButton.disabled = false;
                 return;
             }
+            window.currentExtractedTextForQuiz = combinedText.trim();
             
-            if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('Text extracted. Generating materials with AI...', true);
+            if (typeof window.showProcessingStatus === 'function') window.showProcessingStatus('processingStatus', 'Text extracted. Generating materials with AI...', true);
             window.currentKeywordsForHighlighting = summaryKeywords.split(',').map(k => k.trim()).filter(k => k);
-
-            console.log("[upload.js] Calling apiProcessContent with quizOptions:", quizOptions); 
+            
             const results = await apiProcessContent(
                 combinedText.trim(),
                 filesToProcess.length > 1 ? "Multiple Files" : firstFileName,
@@ -257,15 +265,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 summaryNegativeKeywords,
                 quizOptions 
             );
-            console.log("[upload.js] Results from apiProcessContent:", JSON.stringify(results, null, 2)); 
+            results.extractedText = combinedText.trim(); 
+            results.quizOptions = quizOptions; 
+
             if (typeof window.displayResults === 'function') window.displayResults(results); 
-            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus();
+            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus('processingStatus');
             filesToProcess = []; 
             renderFilePreviews();
         } catch (error) {
             const message = error.data?.message || error.message || 'An error occurred during processing.';
             if (typeof window.showMessage === 'function') window.showMessage('processingStatus', message, 'error');
-            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus();
+            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus('processingStatus');
         } finally {
             updateProcessButtonState(); 
         }

@@ -47,7 +47,8 @@ const apiProcessContent = (
   return request('/study/process', 'POST', {
     extractedText, originalFilename, originalContentType, outputFormats,
     summaryLengthPreference, summaryStylePreference, summaryKeywords, 
-    summaryAudiencePurpose, summaryNegativeKeywords, quizOptions
+    summaryAudiencePurpose, summaryNegativeKeywords, quizOptions,
+    extractedText // Ensure extractedText is part of the payload for quiz generation fallback
   }, !!token); 
 };
 
@@ -65,7 +66,7 @@ const apiRegenerateSessionContent = (
     if (summaryKeywords !== undefined) body.summaryKeywords = summaryKeywords; 
     if (summaryAudiencePurpose) body.summaryAudiencePurpose = summaryAudiencePurpose;
     if (summaryNegativeKeywords !== undefined) body.summaryNegativeKeywords = summaryNegativeKeywords; 
-    if (quizOptions) body.quizOptions = quizOptions; // Add quiz options for regeneration
+    if (quizOptions) body.quizOptions = quizOptions;
     
     return request(`/study/sessions/${sessionId}/regenerate`, 'PUT', body, true);
 };
@@ -82,7 +83,6 @@ const apiFlashcardInteract = (card, interactionType, userAnswer, userQuery, chat
     }, false); 
 };
 
-// New Quiz API functions
 const apiGenerateQuiz = (extractedText, quizOptions) => request('/study/quiz-generate', 'POST', { extractedText, quizOptions });
 const apiGetQuizAnswerFeedback = (question, userAnswer) => request('/study/quiz-answer-feedback', 'POST', { question, userAnswer });
 const apiGetQuizQuestionDetailedExplanation = (question) => request('/study/quiz-question-explanation', 'POST', { question });
