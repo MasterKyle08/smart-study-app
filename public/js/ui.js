@@ -1,6 +1,6 @@
 // Smart Study UI Script - Merged Version
 // Combines features from old_ui.js (detailed flashcards) and new_ui.js (quiz system, UI enhancements)
-console.log("Smart Study UI Script Loaded - Version: MERGED_FLASHCARD_QUIZ_1.0");
+console.log("Smart Study UI Script Loaded - Version: MERGED_FLASHCARD_QUIZ_1.1");
 
 // --- Global Variables ---
 // For Flashcards (primarily from old_ui.js)
@@ -767,36 +767,50 @@ function setupCardActionListeners() {
             const userAnswer = userAnswerTextarea.value;
             flashcardStates[currentFlashcardIndex].userAnswer = userAnswer;
 
-            // Show loading state on feedback div and flip card
             userFeedbackDiv.innerHTML = `<div class="inline-block animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-slate-500 mr-1.5 align-middle"></div> <span class="text-slate-500 align-middle">Getting feedback...</span>`;
-            userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-slate-100 border border-slate-200'; // Neutral loading style
+            userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-slate-100 border border-slate-200';
             cardInner.classList.add('[transform:rotateY(180deg)]');
             flashcardStates[currentFlashcardIndex].isFlipped = true;
 
             try {
-                // Replace with actual API call if available
-                // const result = await apiFlashcardInteract(allFlashcardsData[currentFlashcardIndex], "submit_answer", userAnswer);
-                // Mocking API call for now
                 await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-                const mockFeedback = `Feedback for your answer: "${userAnswer}". This is a mock response.`;
-                const result = { feedback: mockFeedback };
-                // End mock
+                
+                let mockFeedbackText;
+                let isCorrectEvaluation;
+
+                // Normalize user answer and a potential "correct" answer representation
+                const normalizedUserAnswer = userAnswer.toLowerCase().replace(/\s+/g, '').replace(/pi/g, 'π');
+                const normalizedCorrectAnswerSymbol = "5π/6".toLowerCase().replace(/\s+/g, '');
+                const normalizedCorrectAnswerText = "5pi/6".toLowerCase().replace(/\s+/g, '');
+
+
+                if (normalizedUserAnswer === normalizedCorrectAnswerSymbol || normalizedUserAnswer === normalizedCorrectAnswerText) {
+                    mockFeedbackText = `Excellent! Your answer "${userAnswer}" is correct. The system expected something like "5π/6".`;
+                    isCorrectEvaluation = true;
+                } else if (userAnswer.toLowerCase().includes("partially")) { // For testing partial
+                     mockFeedbackText = `Your answer "${userAnswer}" is partially correct. Keep trying!`;
+                     isCorrectEvaluation = 'partial';
+                }
+                else {
+                    mockFeedbackText = `Your answer "${userAnswer}" is not quite right. The correct answer is "5π/6".`;
+                    isCorrectEvaluation = false;
+                }
+                
+                const result = { feedback: mockFeedbackText };
 
                 flashcardStates[currentFlashcardIndex].aiFeedback = result.feedback;
                 userFeedbackDiv.innerHTML = processTextForDisplay(result.feedback);
+                flashcardStates[currentFlashcardIndex].isCorrect = isCorrectEvaluation;
 
-                // Determine correctness based on feedback (example logic)
-                const feedbackText = result.feedback.toLowerCase();
-                if (feedbackText.includes("partially correct")) {
-                    userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-yellow-50 border border-yellow-200 text-yellow-700';
-                    flashcardStates[currentFlashcardIndex].isCorrect = 'partial';
-                } else if (feedbackText.includes("correct")) {
+
+                if (isCorrectEvaluation === true) {
                     userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-green-50 border border-green-200 text-green-700';
-                    flashcardStates[currentFlashcardIndex].isCorrect = true;
+                } else if (isCorrectEvaluation === 'partial') {
+                    userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-yellow-50 border border-yellow-200 text-yellow-700';
                 } else {
                     userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-red-50 border border-red-200 text-red-700';
-                    flashcardStates[currentFlashcardIndex].isCorrect = false;
                 }
+
             } catch (error) {
                 console.error("Error getting flashcard feedback:", error);
                 const errorMessage = `Error: ${error.message || 'Could not get feedback.'}`;
