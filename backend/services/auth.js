@@ -7,25 +7,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// Try to get JWT_SECRET from environment variables, otherwise use a fallback.
-// IMPORTANT: For production, always use environment variables set by your hosting platform.
-// The fallback is primarily for local development convenience if .env is missing.
-const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-super-secret-key-32-characters-long';
+const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
 
-if (!JWT_SECRET || JWT_SECRET === 'your-fallback-super-secret-key-32-characters-long') {
-  if (process.env.NODE_ENV === 'production') {
-    console.error("FATAL ERROR: JWT_SECRET is not securely defined for production. Please set it as an environment variable in your hosting environment.");
-    process.exit(1);
-  } else {
-    console.warn("Warning: JWT_SECRET is using a fallback value. For production, set a strong, unique JWT_SECRET in your environment variables.");
-  }
+if (!JWT_SECRET) {
+  console.error("FATAL ERROR: JWT_SECRET is not defined in auth.js. Please set it in your .env file.");
+  process.exit(1);
 }
-if (JWT_SECRET.length < 32 && process.env.NODE_ENV === 'production') {
-    console.error("FATAL ERROR: JWT_SECRET is not long enough for production. It must be at least 32 characters. Please set a strong one in your environment variables.");
-    process.exit(1);
-}
-
 
 /**
  * Registers a new user.
