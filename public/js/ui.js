@@ -34,6 +34,12 @@ function clearMessage(elementId) {
         element.className = '';
         element.classList.add('hidden');
     }
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = '';
+        element.className = '';
+        element.classList.add('hidden');
+    }
 }
 
 function showProcessingStatus(elementId, message, showSpinner = false) {
@@ -95,6 +101,7 @@ function setupTabs(containerSelector) {
 function processTextForDisplay(text, keywordsToHighlight = []) {
     if (!text) return '';
     let processedText = text
+    let processedText = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -104,7 +111,11 @@ function processTextForDisplay(text, keywordsToHighlight = []) {
     if (keywordsToHighlight && keywordsToHighlight.length > 0) {
         const keywordPattern = new RegExp(`(${keywordsToHighlight.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
         processedText = processedText.replace(keywordPattern, '<span class="highlighted-keyword">$1</span>');
+        const keywordPattern = new RegExp(`(${keywordsToHighlight.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+        processedText = processedText.replace(keywordPattern, '<span class="highlighted-keyword">$1</span>');
     }
+    return processedText;
+}
     return processedText;
 }
 
@@ -252,7 +263,75 @@ function renderSummary(container, summaryText) {
             sectionContentHtml += line + '\n';
         }
     });
+    lines.forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith('### ')) {
+            firstHeadingFound = true;
+            if (currentSectionDetails) {
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'details-accordion-content';
+                contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), window.currentKeywordsForHighlighting || []);
+                currentSectionDetails.appendChild(contentDiv);
+                container.appendChild(currentSectionDetails);
+            }
+            currentSectionDetails = document.createElement('details');
+            currentSectionDetails.className = 'details-accordion';
+            currentSectionDetails.open = true;
+            const summaryTitle = document.createElement('summary');
+            summaryTitle.className = 'details-accordion-summary';
+            summaryTitle.innerHTML = processTextForDisplay(trimmedLine.substring(4), window.currentKeywordsForHighlighting || []);
+            currentSectionDetails.appendChild(summaryTitle);
+            sectionContentHtml = '';
+        } else {
+            sectionContentHtml += line + '\n';
+        }
+    });
 
+    if (firstHeadingFound && currentSectionDetails) {
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'details-accordion-content';
+        contentDiv.innerHTML = processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), window.currentKeywordsForHighlighting || []);
+        currentSectionDetails.appendChild(contentDiv);
+        container.appendChild(currentSectionDetails);
+    } else if (sectionContentHtml.trim()) {
+        const currentContentLines = sectionContentHtml.trim().split('\n');
+        const isBulleted = currentContentLines.some(l => l.trim().startsWith('* ') || l.trim().startsWith('- '));
+        
+        if (isBulleted) {
+            let firstBulletIdx = currentContentLines.findIndex(l => l.trim().startsWith('* ') || l.trim().startsWith('- '));
+            const relevantLines = firstBulletIdx !== -1 ? currentContentLines.slice(firstBulletIdx) : [];
+            
+            if (relevantLines.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'list-disc list-inside space-y-1 pl-1';
+                relevantLines.forEach(l => {
+                    const trimmedL = l.trim();
+                    if (trimmedL.startsWith('* ') || trimmedL.startsWith('- ')) {
+                        const li = document.createElement('li');
+                        li.innerHTML = processTextForDisplay(trimmedL.substring(2), window.currentKeywordsForHighlighting || []);
+                        ul.appendChild(li);
+                    } else if (trimmedL) {
+                        const li = document.createElement('li');
+                        li.innerHTML = processTextForDisplay(trimmedL, window.currentKeywordsForHighlighting || []);
+                        ul.appendChild(li);
+                    }
+                });
+                container.appendChild(ul);
+            }
+        } else {
+            container.innerHTML = processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), window.currentKeywordsForHighlighting || []);
+        }
+    }
+
+    if (container.innerHTML.trim() !== "") {
+        const explainInstruction = document.getElementById('explainInstruction');
+        if (explainInstruction) explainInstruction.classList.remove('hidden');
+    }
+}
+
+function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight = [], context = 'main') {
+    if (!container || !Array.isArray(flashcards) || flashcards.length === 0) {
+        container.innerHTML = '<p class="text-slate-500 text-center">No flashcards available.</p>';
     if (firstHeadingFound && currentSectionDetails) {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'details-accordion-content';
@@ -351,6 +430,9 @@ function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight 
                     <label for="flashcardAnswer-${context}" class="block text-sm font-medium text-slate-700 mb-1">Your Answer:</label>
                     <textarea id="flashcardAnswer-${context}" class="form-textarea w-full text-sm rounded-lg border-slate-300 shadow-sm" rows="2" placeholder="Type your answer here..."></textarea>
                     <button onclick="checkFlashcardAnswer('${context}')" class="mt-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Check Answer</button>
+                    <label for="flashcardAnswer-${context}" class="block text-sm font-medium text-slate-700 mb-1">Your Answer:</label>
+                    <textarea id="flashcardAnswer-${context}" class="form-textarea w-full text-sm rounded-lg border-slate-300 shadow-sm" rows="2" placeholder="Type your answer here..."></textarea>
+                    <button onclick="checkFlashcardAnswer('${context}')" class="mt-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Check Answer</button>
                 </div>
                 <div>
                     <label for="flashcardQuestion-${context}" class="block text-sm font-medium text-slate-700 mb-1">Ask a Question:</label>
@@ -438,6 +520,9 @@ function renderInteractiveFlashcards(container, flashcards, keywordsToHighlight 
         }
 
         try {
+            const response = await apiFlashcardInteract(flashcards[currentCardIndex], 'submit_answer', userAnswer);
+            showFeedback(response.feedback);
+            answerInput.value = '';
             const response = await apiFlashcardInteract(flashcards[currentCardIndex], 'submit_answer', userAnswer);
             showFeedback(response.feedback);
             answerInput.value = '';
