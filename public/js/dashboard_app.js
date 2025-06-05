@@ -9,8 +9,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalUpdatedAt = document.getElementById('modalUpdatedAt');
     const modalSummaryOutput = document.getElementById('modalSummaryOutput');
     const modalFlashcardsOutputPlaceholder = document.querySelector('#modalFlashcardsTab .output-box-flashcards-placeholder');
-    const modalFlashcardsOutputRaw = document.getElementById('modalFlashcardsOutputRaw');
-    const launchFlashcardModalBtnModal = document.getElementById('launchFlashcardModalBtn-modal'); 
+    const modalFlashcardsOutputRaw = document.getElementById('modalFlashcardsOutputRaw'); 
+    
+    const launchButtonTemplateGlobal = document.getElementById('launchFlashcardModalBtn-modal');
+
+    if (launchButtonTemplateGlobal) {
+        launchButtonTemplateGlobal.classList.add('hidden');
+        // For extra safety, ensure it's not displayed by default by browsers if CSS fails
+        launchButtonTemplateGlobal.style.display = 'none'; 
+    }
 
     const modalQuizOutput = document.getElementById('modalQuizOutput');
     const modalOriginalTextOutput = document.getElementById('modalOriginalTextOutput');
@@ -34,7 +41,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const customConfirmModalNo = document.getElementById('customConfirmModalNo');
     let sessionToDeleteId = null;
     let cardElementToDelete = null;
-
 
     let currentOpenSessionId = null;
     let currentKeywordsForModalHighlighting = [];
@@ -84,10 +90,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'p-5 sm:p-6 flex-grow';
 
-        const title = document.createElement('h3');
-        title.className = 'text-lg sm:text-xl font-semibold text-indigo-700 mb-1.5 sm:mb-2 truncate';
-        title.textContent = session.original_filename || 'Untitled Session';
-        contentDiv.appendChild(title);
+        const titleElement = document.createElement('h3'); 
+        titleElement.className = 'text-lg sm:text-xl font-semibold text-indigo-700 mb-1.5 sm:mb-2 truncate';
+        titleElement.textContent = session.original_filename || 'Untitled Session';
+        contentDiv.appendChild(titleElement);
 
         const createdP = document.createElement('p');
         createdP.className = 'text-xs text-slate-500 mb-1';
@@ -132,9 +138,14 @@ document.addEventListener('DOMContentLoaded', () => {
         footerDiv.appendChild(deleteCardButton);
         card.appendChild(footerDiv);
 
-        contentDiv.addEventListener('click', () => openSessionDetailModal(session.id));
-        title.addEventListener('click', () => openSessionDetailModal(session.id)); 
-
+        contentDiv.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+            openSessionDetailModal(session.id);
+        });
+        titleElement.addEventListener('click', (e) => { 
+             if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+            openSessionDetailModal(session.id)
+        });
         return card;
     }
 
@@ -149,14 +160,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if(customConfirmModalYes) {
         customConfirmModalYes.addEventListener('click', async () => {
             if (sessionToDeleteId && cardElementToDelete) {
+                if (currentOpenSessionId === sessionToDeleteId && sessionDetailModal && sessionDetailModal.dataset.visible === 'true') {
+                     if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
+                     currentOpenSessionId = null;
+                     window.currentDashboardSessionData = null;
+                }
                 try {
                     await apiDeleteSession(sessionToDeleteId);
-                    cardElementToDelete.remove();
+                    cardElementToDelete.remove(); 
                     if (sessionsListContainer && sessionsListContainer.children.length === 0) {
                         sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
                     }
                 } catch (error) {
-                    if (typeof window.showMessage === 'function') window.showMessage('loadingSessionsMessage', `Failed to delete session: ${error.message}`, 'error'); 
+                     alert(`Failed to delete session: ${error.message || 'Please try again.'}`);
                 } finally {
                     if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('customConfirmModal', false);
                     sessionToDeleteId = null;
@@ -245,6 +261,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function hideRawFlashcardData() {
+        const detailsContainer = modalFlashcardsOutputRaw ? modalFlashcardsOutputRaw.closest('details') : null;
+        if (detailsContainer) {
+            detailsContainer.open = false;
+            detailsContainer.classList.add('hidden'); 
+            detailsContainer.style.display = 'none'; // Force hide with inline style
+        }
+        if (modalFlashcardsOutputRaw) {
+            modalFlashcardsOutputRaw.value = ''; 
+            modalFlashcardsOutputRaw.style.display = 'none'; // Also force hide the textarea itself
+        }
+    }
+
     async function openSessionDetailModal(sessionId) {
         currentOpenSessionId = sessionId;
         if(regenerateOptionsDiv) regenerateOptionsDiv.classList.add('hidden'); 
@@ -267,6 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const paragraphStyleRadio = document.querySelector('input[name="modalSummaryStyle"][value="paragraph"]');
         if(paragraphStyleRadio) paragraphStyleRadio.checked = true;
 
+        hideRawFlashcardData(); 
+
         try {
             if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Loading session details...', 'success');
             const { session } = await apiGetSessionDetails(sessionId);
@@ -282,29 +313,50 @@ document.addEventListener('DOMContentLoaded', () => {
             currentKeywordsForModalHighlighting = []; 
             if(modalSummaryOutput) renderModalSummary(session.summary, currentKeywordsForModalHighlighting);
             
-            if (session.flashcards && Array.isArray(session.flashcards) && session.flashcards.length > 0) {
-                if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = JSON.stringify(session.flashcards, null, 2);
-                if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = `<p class="text-slate-600 text-sm">Total ${session.flashcards.length} flashcards. Click "Study These Flashcards" to begin.</p>`;
-                if (launchFlashcardModalBtnModal) {
-                    launchFlashcardModalBtnModal.classList.remove('hidden');
-                    launchFlashcardModalBtnModal.onclick = () => { 
-                        const flashcardModalContent = document.getElementById('flashcardModalContent-modal');
-                        if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards && typeof window.renderInteractiveFlashcards === 'function') {
-                            window.renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
-                            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', true);
-                        }
-                    };
-                }
-            } else {
-                if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = '<p class="text-slate-500 text-sm">No flashcards available for this session.</p>';
-                if (launchFlashcardModalBtnModal) launchFlashcardModalBtnModal.classList.add('hidden');
-                if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
+            if (modalFlashcardsOutputPlaceholder) {
+                modalFlashcardsOutputPlaceholder.innerHTML = ''; 
+            }
+            // Populate raw data (it's in a hidden <details> by now)
+            if (modalFlashcardsOutputRaw) { 
+                modalFlashcardsOutputRaw.value = (session.flashcards && Array.isArray(session.flashcards)) ? JSON.stringify(session.flashcards, null, 2) : '';
             }
 
-            if(modalQuizOutput) modalQuizOutput.innerHTML = ''; // Clear previous quiz content
+            if (session.flashcards && Array.isArray(session.flashcards) && session.flashcards.length > 0) {
+                if (modalFlashcardsOutputPlaceholder) {
+                    const flashcardCountText = document.createElement('p');
+                    flashcardCountText.className = 'text-slate-600 text-sm mb-3'; 
+                    flashcardCountText.textContent = `Total ${session.flashcards.length} flashcards available.`;
+                    modalFlashcardsOutputPlaceholder.appendChild(flashcardCountText);
+
+                    if (launchButtonTemplateGlobal) { 
+                        const buttonClone = launchButtonTemplateGlobal.cloneNode(true);
+                        buttonClone.style.display = ''; // Remove inline style if template had it
+                        buttonClone.classList.remove('hidden'); 
+                        buttonClone.textContent = 'Study These Flashcards'; 
+                        buttonClone.disabled = false; 
+                        
+                        buttonClone.onclick = () => { 
+                            const flashcardModalContent = document.getElementById('flashcardModalContent-modal');
+                            if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards && typeof window.renderInteractiveFlashcards === 'function') {
+                                window.renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
+                                if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', true);
+                            } else {
+                                alert('Error: Could not load flashcard study interface.');
+                            }
+                        };
+                        modalFlashcardsOutputPlaceholder.appendChild(buttonClone); 
+                    }
+                }
+            } else {
+                if (modalFlashcardsOutputPlaceholder) {
+                    modalFlashcardsOutputPlaceholder.innerHTML = '<p class="text-slate-500 text-sm">No flashcards available for this session.</p>';
+                }
+            }
+
+            if(modalQuizOutput) modalQuizOutput.innerHTML = ''; 
             if(modalQuizOutput && typeof window.renderQuiz === 'function') {
                  let quizDataForModal = session.quiz;
-                 if (typeof session.quiz === 'string') { // Should be pre-parsed by API, but handle just in case
+                 if (typeof session.quiz === 'string') { 
                      try { quizDataForModal = JSON.parse(session.quiz); } catch (e) { quizDataForModal = null; }
                  }
                  if (Array.isArray(quizDataForModal) && quizDataForModal.length > 0) {
@@ -331,7 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', true);
         } catch (error) {
             if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
-            alert(`Error: ${error.message || 'Could not load session details.'}`);
+            alert(`Error opening session: ${error.message || 'Could not load session details.'}`);
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
                 localStorage.removeItem('userEmail'); 
@@ -363,6 +415,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', false);
         });
      }
+     const flashcardStudyModal = document.getElementById('flashcardStudyModal-modal');
+     if (flashcardStudyModal) {
+        flashcardStudyModal.addEventListener('click', (event) => {
+            if (event.target === flashcardStudyModal) { 
+                 if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', false);
+            }
+        });
+     }
 
     if (regenerateButton) {
         regenerateButton.addEventListener('click', () => {
@@ -387,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!currentOpenSessionId || !window.currentDashboardSessionData) return;
             const formatsToRegen = Array.from(regenerateOptionsDiv.querySelectorAll('input[name="regenOutputFormat"]:checked')).map(cb => cb.value);
             if (formatsToRegen.length === 0) { 
-                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Please select at least one format to regenerate.', 'error', 3000);
                 return; 
             }
 
@@ -403,38 +463,60 @@ document.addEventListener('DOMContentLoaded', () => {
             if (formatsToRegen.includes('quiz')) {
                 quizOptsForRegen = window.currentDashboardSessionData.quiz_options || 
                                    { questionTypes: ['multiple_choice'], numQuestions: 'ai_choice', difficulty: 'medium' };
-                // Potentially add UI here to customize quiz options for regeneration in modal
             }
-
 
             confirmRegenerateButton.disabled = true; 
             confirmRegenerateButton.textContent = 'Regenerating...';
             if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Regenerating content, please wait...', 'success');
             if(modalExplanationOutput) modalExplanationOutput.classList.add('hidden');
 
+            hideRawFlashcardData(); 
+
             try {
                 const { updatedSession } = await apiRegenerateSessionContent(
                     currentOpenSessionId, formatsToRegen,
-                    slp, ssp, sks, sap, snk, quizOptsForRegen
+                    slp, ssp, sks, sap, snk, quizOptsForRegen 
                 );
                 window.currentDashboardSessionData = updatedSession; 
-                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Content regenerated successfully!', 'success');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Content regenerated successfully!', 'success', 3000);
                 if(modalSummaryOutput) renderModalSummary(updatedSession.summary, currentKeywordsForModalHighlighting);
                 
+                if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = ''; 
+                if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = (updatedSession.flashcards && Array.isArray(updatedSession.flashcards)) ? JSON.stringify(updatedSession.flashcards, null, 2) : '';
+
                 if (updatedSession.flashcards && updatedSession.flashcards.length > 0) {
-                    if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = JSON.stringify(updatedSession.flashcards, null, 2);
-                     if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = `<p class="text-slate-600 text-sm">Total ${updatedSession.flashcards.length} flashcards. Click "Study These Flashcards" to begin.</p>`;
-                    if (launchFlashcardModalBtnModal) launchFlashcardModalBtnModal.classList.remove('hidden');
+                    if (modalFlashcardsOutputPlaceholder) {
+                        const flashcardCountText = document.createElement('p');
+                        flashcardCountText.className = 'text-slate-600 text-sm mb-3';
+                        flashcardCountText.textContent = `Total ${updatedSession.flashcards.length} flashcards available.`;
+                        modalFlashcardsOutputPlaceholder.appendChild(flashcardCountText);
+
+                        if (launchButtonTemplateGlobal) { 
+                             const buttonCloneRegen = launchButtonTemplateGlobal.cloneNode(true);
+                             buttonCloneRegen.style.display = ''; // Remove inline style
+                             buttonCloneRegen.classList.remove('hidden'); 
+                             buttonCloneRegen.textContent = 'Study These Flashcards';
+                             buttonCloneRegen.disabled = false;
+                             buttonCloneRegen.onclick = () => { 
+                                const flashcardModalContent = document.getElementById('flashcardModalContent-modal');
+                                if (flashcardModalContent && window.currentDashboardSessionData && window.currentDashboardSessionData.flashcards && typeof window.renderInteractiveFlashcards === 'function') {
+                                   window.renderInteractiveFlashcards(flashcardModalContent, window.currentDashboardSessionData.flashcards, [], 'modal');
+                                   if(typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('flashcardStudyModal-modal', true);
+                                } else {
+                                   alert('Error: Could not load flashcard study interface.');
+                                }
+                             };
+                             modalFlashcardsOutputPlaceholder.appendChild(buttonCloneRegen);
+                        }
+                    }
                 } else {
                     if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = '<p class="text-slate-500 text-sm">No flashcards available for this session.</p>';
-                    if (launchFlashcardModalBtnModal) launchFlashcardModalBtnModal.classList.add('hidden');
-                    if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = '';
                 }
 
-                if(modalQuizOutput) modalQuizOutput.innerHTML = ''; // Clear previous
+                if(modalQuizOutput) modalQuizOutput.innerHTML = ''; 
                 if(modalQuizOutput && typeof window.renderQuiz === 'function') {
                     let regeneratedQuizData = updatedSession.quiz;
-                    if (typeof updatedSession.quiz === 'string') { // API should return parsed, but handle just in case
+                    if (typeof updatedSession.quiz === 'string') { 
                          try { regeneratedQuizData = JSON.parse(updatedSession.quiz); } catch (e) { regeneratedQuizData = null; }
                     }
                     if (Array.isArray(regeneratedQuizData) && regeneratedQuizData.length > 0) {
@@ -444,11 +526,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-
                 if(modalUpdatedAt && updatedSession.updated_at) modalUpdatedAt.textContent = new Date(updatedSession.updated_at.includes('Z') ? updatedSession.updated_at : updatedSession.updated_at + 'Z').toLocaleString();
                 loadUserSessions(); 
             } catch (error) {
-                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Regeneration failed: ${error.message || 'Unknown error'}`, 'error', 5000);
             } finally {
                 confirmRegenerateButton.disabled = false; 
                 confirmRegenerateButton.textContent = 'Confirm Regeneration';
@@ -505,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 modalExplanationOutput.innerHTML = `<p class="error-message p-3 rounded-md">Error: ${error.message || 'Could not get explanation.'}</p>`;
                 modalExplanationOutput.classList.remove('hidden');
-                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error');
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error', 3000);
             } finally {
                 modalExplainButton.disabled = false; modalExplainButton.textContent = 'Explain';
             }
@@ -524,3 +605,4 @@ document.addEventListener('DOMContentLoaded', () => {
     if(typeof window.setCurrentYear === 'function') window.setCurrentYear('currentYearDashboard');
     loadUserSessions();
 });
+
