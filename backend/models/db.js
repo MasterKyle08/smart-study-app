@@ -1,119 +1,135 @@
 /**
  * @file backend/models/db.js
- * @description SQLite database setup and initialization.
- * Creates tables if they don't exist.
+ * @description Turso database setup and initialization.
+ * Creates tables if they don't exist using @libsql/client.
  */
 
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { createClient } = require('@libsql/client');
 
-// Determine the database path. Use environment variable or default.
-const dbPath = process.env.DATABASE_URL 
-  ? (process.env.DATABASE_URL.startsWith('./') ? path.resolve(__dirname, '..', '..', process.env.DATABASE_URL) : process.env.DATABASE_URL)
-  : path.resolve(__dirname, '..', '..', 'db', 'smart_study.sqlite');
+// Environment variables for Turso connection
+const tursoDbUrl = process.env.TURSO_DATABASE_URL;
+const tursoAuthToken = process.env.TURSO_AUTH_TOKEN;
 
-// Ensure the db directory exists (though sqlite3 can create the file, not the directory)
-const fs = require('fs');
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+if (!tursoDbUrl) {
+  console.error('FATAL ERROR: TURSO_DATABASE_URL is not defined. Please set it in your .env file.');
+  process.exit(1);
+}
+if (!tursoAuthToken) {
+  console.warn('WARNING: TURSO_AUTH_TOKEN is not defined. Database connection might fail if required.');
 }
 
 /**
- * SQLite database connection instance.
- * @type {sqlite3.Database}
+ * Turso database client instance.
+ * @type {import('@libsql/client').Client}
  */
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error connecting to SQLite database:', err.message);
-    throw err; // Throw error to prevent app from starting with faulty DB
-  }
-  console.log(`Connected to SQLite database at ${dbPath}`);
-  // Enable foreign key support
-  db.run('PRAGMA foreign_keys = ON;', (pragmaErr) => {
-    if (pragmaErr) {
-      console.error("Failed to enable foreign key support:", pragmaErr.message);
-    } else {
-      console.log("Foreign key support enabled.");
-    }
-  });
+const db = createClient({
+  url: tursoDbUrl,
+  authToken: tursoAuthToken,
 });
 
-/**
- * SQL statements to create necessary tables.
- */
-const createTablesSQL = `
-  CREATE TABLE IF NOT EXISTS Users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-  );
+const createUserTableSQL = `CREATE TABLE IF NOT EXISTS Users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);`;
 
-  CREATE TABLE IF NOT EXISTS Sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    original_filename TEXT,
-    original_content_type TEXT, -- e.g., 'text/plain', 'image/jpeg', 'application/pdf'
-    extracted_text TEXT,
-    summary TEXT,
-    flashcards TEXT, -- Store as JSON string
-    quiz TEXT, -- Store as JSON string
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-  );
+const createSessionsTableSQL = `CREATE TABLE IF NOT EXISTS Sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  original_filename TEXT,
+  original_content_type TEXT,
+  extracted_text TEXT,
+  summary TEXT,
+  flashcards TEXT, 
+  quiz TEXT, 
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);`;
 
-  -- Trigger to update 'updated_at' timestamp on Sessions table update
-  CREATE TRIGGER IF NOT EXISTS update_sessions_updated_at
-  AFTER UPDATE ON Sessions
-  FOR EACH ROW
-  BEGIN
-    UPDATE Sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
-  END;
-`;
+const createSessionUpdateTriggerSQL = `CREATE TRIGGER IF NOT EXISTS update_sessions_updated_at
+AFTER UPDATE ON Sessions
+FOR EACH ROW
+BEGIN
+  UPDATE Sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;`;
 
 /**
  * Initializes the database by creating tables if they don't exist.
+ * Executes DDL statements sequentially.
  * @returns {Promise<void>} A promise that resolves when tables are created.
  */
-function init() {
-  return new Promise((resolve, reject) => {
-    db.exec(createTablesSQL, (err) => {
-      if (err) {
-        console.error('Error creating tables:', err.message);
-        return reject(err);
-      }
-      console.log('Database tables checked/created successfully.');
-      resolve();
-    });
-  });
+async function init() {
+  console.log('Attempting to initialize Turso database schema...');
+  try {
+    // Enable foreign key support. This is often a session-specific pragma.
+    await db.execute('PRAGMA foreign_keys = ON;');
+    console.log("Foreign key support enabled for Turso DB session.");
+
+    // Execute DDL statements one by one.
+    console.log('Executing: Create Users Table IF NOT EXISTS');
+    await db.execute(createUserTableSQL);
+    console.log('Users table checked/created.');
+
+    console.log('Executing: Create Sessions Table IF NOT EXISTS');
+    await db.execute(createSessionsTableSQL);
+    console.log('Sessions table checked/created.');
+
+    console.log('Executing: Create Session Update Trigger IF NOT EXISTS');
+    await db.execute(createSessionUpdateTriggerSQL);
+    console.log('Session update trigger checked/created.');
+    
+    // Removed await db.sync(); as it's not supported in HTTP mode.
+    // Schema changes over HTTP are typically committed immediately by the server.
+    
+    console.log('Database schema initialization statements executed with Turso.');
+  } catch (error) {
+    console.error('Error during Turso database schema initialization:', error.message);
+    if (error.cause) {
+        console.error('Cause:', error.cause);
+    }
+    // Check for common "already exists" messages which are not critical errors for IF NOT EXISTS
+    if (error.message && (error.message.toLowerCase().includes('table users already exists') || 
+                           error.message.toLowerCase().includes('table sessions already exists') ||
+                           error.message.toLowerCase().includes('trigger update_sessions_updated_at already exists'))) {
+        console.warn('One or more schema elements already existed, which is fine with "IF NOT EXISTS".');
+    } else {
+        // For other errors, including the "migration jobs" one if it persists, re-throw.
+        throw error; 
+    }
+  }
 }
 
 /**
  * Closes the database connection.
- * @param {function} [callback] - Optional callback function.
  */
-function close(callback) {
-  db.close(callback);
+async function close() {
+  try {
+    db.close(); // client.close() is synchronous for the http client
+    console.log('Turso database connection closed.');
+  } catch (error) {
+    console.error('Error closing Turso database connection:', error);
+  }
 }
 
 // Handle command line argument for explicit DB initialization
-if (require.main !== module && process.argv[2] === 'init') {
-  console.log('Manual DB initialization requested...');
-  init().then(() => {
-    console.log('Manual DB initialization complete.');
-    close();
-  }).catch(err => {
-    console.error('Manual DB initialization failed:', err);
-    close();
-    process.exit(1);
-  });
+if (require.main === module && process.argv.includes('init')) {
+  console.log('Manual Turso DB initialization requested...');
+  init()
+    .then(() => {
+      console.log('Manual Turso DB initialization complete.');
+      return close(); // close() is synchronous
+    })
+    .catch(err => {
+      console.error('Manual Turso DB initialization failed:', err);
+      close(); // close() is synchronous
+      process.exit(1);
+    });
 }
-
 
 module.exports = {
   db,
-  init, // Export init function
-  close
+  init,
+  close,
 };
