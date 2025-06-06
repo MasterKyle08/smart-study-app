@@ -183,8 +183,7 @@ function displayResults(results) {
     const summaryOutput = document.getElementById('summaryOutput');
     const flashcardsOutputRaw = document.getElementById('flashcardsOutputRaw');
     const launchFlashcardModalBtnMain = document.getElementById('launchFlashcardModalBtn-main');
-    // const flashcardsOutputPlaceholder = document.querySelector('#flashcardsTab .output-box-flashcards-placeholder'); // No longer directly setting its innerHTML
-    const flashcardPlaceholderTextEl = document.getElementById('flashcardPlaceholderText'); // New specific element for text
+    const flashcardPlaceholderTextEl = document.getElementById('flashcardPlaceholderText'); 
 
     const startQuizBtn = document.getElementById('startQuizBtn');
     const quizReadyMessage = document.getElementById('quizReadyMessage');
@@ -219,7 +218,6 @@ function displayResults(results) {
         if (summaryTabLink) { summaryTabLink.classList.add('opacity-50', 'cursor-not-allowed', 'hidden'); summaryTabLink.disabled = true; }
     }
 
-    // Flashcards
     if (results.flashcards && Array.isArray(results.flashcards) && results.flashcards.length > 0) {
         allFlashcardsData = results.flashcards; 
         if (flashcardsOutputRaw) flashcardsOutputRaw.value = JSON.stringify(results.flashcards, null, 2);
@@ -545,7 +543,7 @@ function setupFlashcardEventListeners() {
     if (resetBtn) {
         resetBtn.onclick = () => {
             let originalSource = (flashcardContext === 'main' && window.lastProcessedResults) ? window.lastProcessedResults.flashcards : 
-                                 (flashcardContext === 'modal' && window.currentDashboardSessionData) ? window.currentDashboardSessionData.flashcards : allFlashcardsData;
+                                  (flashcardContext === 'modal' && window.currentDashboardSessionData) ? window.currentDashboardSessionData.flashcards : allFlashcardsData;
             allFlashcardsData = [...(originalSource || [])];
             markedForReview = allFlashcardsData.map(() => false);
             flashcardStates = {}; allFlashcardsData.forEach((_, idx) => { flashcardStates[idx] = { isFlipped: false, userAnswer: '', aiFeedback: '', correctness: null, chatHistory: [] }; });
@@ -565,7 +563,6 @@ function addMessageToChat(sender, message, type, context, chatHistoryArrayRef) {
     messageEl.className = `p-1.5 rounded-md ${messageBgClass} max-w-[85%] ${textAlignClass} mb-1`;
     messageEl.innerHTML = `<strong class="${senderClass}">${sender}:</strong> ${processTextForDisplay(message)}`;
     messagesDiv.appendChild(messageEl); messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    // This function only renders; the calling function must update the actual chatHistory array in flashcardStates
 }
 
 function renderFlashcardChatHistory(messagesDiv, chatHistory) { 
@@ -574,7 +571,6 @@ function renderFlashcardChatHistory(messagesDiv, chatHistory) {
     chatHistory.forEach(msg => {
         const messageEl = document.createElement('div');
         let senderClass = 'text-slate-700'; let messageBgClass = 'bg-white'; let textAlignClass = 'mr-auto';
-        // Adjusted role check for consistency
         if (msg.role === 'user') { senderClass = 'text-blue-600 font-semibold'; messageBgClass = 'bg-blue-50'; textAlignClass = 'ml-auto'; }
         else if (msg.role === 'model' || msg.role === 'AI') { senderClass = 'text-indigo-600 font-semibold'; messageBgClass = 'bg-indigo-50'; }
         messageEl.className = `p-1.5 rounded-md ${messageBgClass} max-w-[85%] ${textAlignClass} mb-1`;
@@ -698,6 +694,12 @@ function renderQuizInterface() {
         return;
     }
     const question = window.currentQuizData[window.currentQuizQuestionIndex];
+    if (!question || typeof question !== 'object') {
+        console.error("Invalid question data at index:", window.currentQuizQuestionIndex, window.currentQuizData);
+        quizInterfaceContainer.innerHTML = '<p class="text-red-500 p-4">Error: Invalid question data. Please try regenerating the quiz.</p>';
+        return;
+    }
+    
     const questionState = window.quizQuestionStates[window.currentQuizQuestionIndex];
     const isAnswered = questionState !== 'unanswered' && questionState !== 'skipped' && questionState !== 'marked';
     const isMarked = questionState === 'marked';
@@ -705,28 +707,51 @@ function renderQuizInterface() {
     let optionsHtml = '';
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    if (question.questionType === 'multiple_choice') {
-        optionsHtml = question.options.map((option, idx) => `
-            <label class="quiz-option-label ${isAnswered || isMarked ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-50 cursor-pointer'}
+    if (!question.questionType) {
+        console.error("Question is missing 'questionType' property:", question);
+        optionsHtml = `<p class="text-red-500">Error: Could not display question because its type is unknown.</p>`;
+    } else if (question.questionType === 'multiple_choice') {
+        if (!Array.isArray(question.options)) {
+            console.error("Multiple choice question is missing 'options' array:", question);
+            optionsHtml = `<p class="text-red-500">Error: Multiple choice options are missing for this question.</p>`;
+        } else {
+            optionsHtml = question.options.map((option, idx) => `
+            <label class="quiz-option-label flex items-center p-3 rounded-lg transition-colors duration-150 text-sm
+                ${isAnswered || isMarked ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-50 cursor-pointer'}
                 ${question.correctness === 'correct' && option === question.correctAnswer ? 'bg-green-100 border-green-400 text-green-700' : ''}
                 ${(question.correctness === 'incorrect' || question.correctness === 'partial') && option === userAnswer && option !== question.correctAnswer ? 'bg-red-100 border-red-400 text-red-700' : ''}
-                ${!isAnswered && !isMarked && option === userAnswer ? 'bg-indigo-100 border-indigo-400' : 'border-slate-300'}
-                 p-3 rounded-lg transition-colors duration-150 block text-sm">
-                <input type="radio" name="quizOption" value="${escapeHtml(option)}" ${option === userAnswer ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''} class="form-radio quiz-option-input sr-only" onchange="window.handleQuizAnswerSelection(this.value, 'multiple_choice')">
-                <span class="font-medium mr-1.5">${alphabet[idx]}.</span><span>${processTextForDisplay(option)}</span>
+                ${!isAnswered && !isMarked && option === userAnswer ? 'bg-indigo-100 border-indigo-400' : 'border-slate-300'}">
+                <input type="radio" name="quizOption" value="${escapeHtml(option)}" 
+                    ${option === userAnswer ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''} 
+                    class="form-radio h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3" 
+                    onchange="window.handleQuizAnswerSelection(this.value, 'multiple_choice')">
+                <span class="font-medium mr-1.5">${alphabet[idx]}.</span>
+                <span>${processTextForDisplay(option)}</span>
             </label>`).join('');
-    } else if (question.questionType === 'select_all') {
-        optionsHtml = question.options.map((option, idx) => `
-            <label class="quiz-option-label ${isAnswered || isMarked ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-50 cursor-pointer'}
-                ${isAnswered && question.correctAnswer.includes(option) ? 'bg-green-100 border-green-400 text-green-700' : ''}
-                ${isAnswered && userAnswer?.includes(option) && !question.correctAnswer.includes(option) ? 'bg-red-100 border-red-400 text-red-700' : ''}
-                ${!isAnswered && !isMarked && userAnswer?.includes(option) ? 'bg-indigo-100 border-indigo-400' : 'border-slate-300'}
-                 p-3 rounded-lg transition-colors duration-150 block text-sm">
-                <input type="checkbox" name="quizOption" value="${escapeHtml(option)}" ${userAnswer?.includes(option) ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''} class="form-checkbox quiz-option-input sr-only" onchange="window.handleQuizAnswerSelection(this.value, 'select_all')">
-                <span class="font-medium mr-1.5">${alphabet[idx]}.</span><span>${processTextForDisplay(option)}</span>
+        }
+    } else if (question.questionType === 'select_all_that_apply' || question.questionType === 'select_all') {
+        if (!Array.isArray(question.options)) {
+            console.error("'Select all' question is missing 'options' array:", question);
+            optionsHtml = `<p class="text-red-500">Error: 'Select all' options are missing for this question.</p>`;
+        } else {
+            optionsHtml = question.options.map((option, idx) => `
+            <label class="quiz-option-label flex items-center p-3 rounded-lg transition-colors duration-150 text-sm
+                ${isAnswered || isMarked ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-50 cursor-pointer'}
+                ${isAnswered && Array.isArray(question.correctAnswer) && question.correctAnswer.includes(option) ? 'bg-green-100 border-green-400 text-green-700' : ''}
+                ${isAnswered && Array.isArray(userAnswer) && userAnswer.includes(option) && Array.isArray(question.correctAnswer) && !question.correctAnswer.includes(option) ? 'bg-red-100 border-red-400 text-red-700' : ''}
+                ${!isAnswered && !isMarked && Array.isArray(userAnswer) && userAnswer.includes(option) ? 'bg-indigo-100 border-indigo-400' : 'border-slate-300'}">
+                <input type="checkbox" name="quizOption" value="${escapeHtml(option)}" 
+                    ${Array.isArray(userAnswer) && userAnswer.includes(option) ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''} 
+                    class="form-checkbox h-4 w-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3" 
+                    onchange="window.handleQuizAnswerSelection(this.value, 'select_all_that_apply')">
+                <span>${processTextForDisplay(option)}</span>
             </label>`).join('');
+        }
     } else if (question.questionType === 'short_answer') {
         optionsHtml = `<textarea id="shortAnswerText" class="form-textarea w-full rounded-lg border-slate-300 shadow-sm text-sm p-2" rows="3" placeholder="Type your answer here..." ${isAnswered || isMarked ? 'disabled' : ''} oninput="window.handleQuizAnswerSelection(this.value, 'short_answer')">${escapeHtml(userAnswer || '')}</textarea>`;
+    } else {
+        console.error("Unknown question type found:", question.questionType, question);
+        optionsHtml = `<p class="text-red-500">Error: Could not display question. Unknown type: ${escapeHtml(question.questionType)}</p>`;
     }
 
     quizInterfaceContainer.innerHTML = `
@@ -772,7 +797,7 @@ function escapeHtml(unsafe) {
 window.handleQuizAnswerSelection = function(value, type) {
     const index = window.currentQuizQuestionIndex;
     if (window.quizQuestionStates[index] === 'marked' || (window.quizQuestionStates[index] !== 'unanswered' && window.quizQuestionStates[index] !== 'skipped')) return;
-    if (type === 'select_all') {
+    if (type === 'select_all_that_apply') {
         window.userQuizAnswers[index] = window.userQuizAnswers[index] || [];
         const optionIdx = window.userQuizAnswers[index].indexOf(value);
         if (optionIdx === -1) window.userQuizAnswers[index].push(value);
