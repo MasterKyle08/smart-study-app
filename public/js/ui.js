@@ -178,6 +178,134 @@ function renderSummary(container, summaryText) {
     }
 }
 
+function renderQuiz(container, quizData, keywordsToHighlight = []) {
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!Array.isArray(quizData) || quizData.length === 0) {
+        container.innerHTML = '<p class="text-slate-500 text-sm p-4 text-center">No quiz data available.</p>';
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    let renderedQuestions = 0;
+
+    quizData.forEach((question, index) => {
+        if (!question || typeof question !== 'object') {
+            return;
+        }
+
+        const questionText = question.questionText || question.question || question.prompt || '';
+        const options = Array.isArray(question.options) ? question.options : (Array.isArray(question.choices) ? question.choices : []);
+
+        let answers = [];
+        if (Array.isArray(question.correctAnswer)) {
+            answers = question.correctAnswer;
+        } else if (question.correctAnswer !== undefined && question.correctAnswer !== null) {
+            answers = [question.correctAnswer];
+        } else if (Array.isArray(question.correctAnswers)) {
+            answers = question.correctAnswers;
+        } else if (question.correctAnswers !== undefined && question.correctAnswers !== null) {
+            answers = [question.correctAnswers];
+        } else if (question.answer !== undefined && question.answer !== null) {
+            answers = [question.answer];
+        }
+        answers = answers
+            .filter(answer => answer !== null && answer !== undefined && String(answer).trim() !== '')
+            .map(answer => (typeof answer === 'string' ? answer : JSON.stringify(answer)));
+
+        const explanation = question.briefExplanation || question.explanation || question.rationale || '';
+
+        if (!questionText && options.length === 0 && answers.length === 0 && !explanation) {
+            return;
+        }
+
+        renderedQuestions += 1;
+
+        const questionCard = document.createElement('article');
+        questionCard.className = 'quiz-question-card bg-white border border-slate-200 rounded-lg shadow-sm p-4 space-y-3';
+
+        const header = document.createElement('div');
+        header.className = 'flex items-start justify-between gap-2';
+
+        const title = document.createElement('h5');
+        title.className = 'text-sm font-semibold text-slate-700';
+        title.textContent = `Question ${index + 1}`;
+        header.appendChild(title);
+
+        if (question.questionType || question.type) {
+            const badge = document.createElement('span');
+            badge.className = 'text-[10px] uppercase tracking-wide font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5';
+            badge.textContent = (question.questionType || question.type || '').replace(/_/g, ' ');
+            header.appendChild(badge);
+        }
+
+        questionCard.appendChild(header);
+
+        if (questionText) {
+            const questionBody = document.createElement('p');
+            questionBody.className = 'text-sm text-slate-700';
+            questionBody.innerHTML = processTextForDisplay(questionText, keywordsToHighlight);
+            questionCard.appendChild(questionBody);
+        }
+
+        if (options.length > 0) {
+            const list = document.createElement('ul');
+            list.className = 'list-disc list-inside space-y-1 text-sm text-slate-600';
+            options.forEach((option, optionIndex) => {
+                if (option === null || option === undefined || option === '') return;
+                const optionItem = document.createElement('li');
+                const prefix = (question.questionType === 'multiple_choice' || question.questionType === 'select_all' || question.type === 'multiple_choice' || question.type === 'select_all')
+                    ? `${String.fromCharCode(65 + optionIndex)}. `
+                    : '';
+                optionItem.innerHTML = processTextForDisplay(`${prefix}${option}`, keywordsToHighlight);
+                list.appendChild(optionItem);
+            });
+            if (list.children.length > 0) {
+                questionCard.appendChild(list);
+            }
+        } else if ((question.questionType || question.type) === 'short_answer') {
+            const shortAnswerNote = document.createElement('p');
+            shortAnswerNote.className = 'text-xs text-slate-500 italic';
+            shortAnswerNote.textContent = 'Short answer question – respond in your own words.';
+            questionCard.appendChild(shortAnswerNote);
+        }
+
+        if (answers.length > 0) {
+            const answerContainer = document.createElement('div');
+            answerContainer.className = 'bg-slate-100 border border-slate-200 rounded-md px-3 py-2';
+
+            const answerHeading = document.createElement('p');
+            answerHeading.className = 'text-xs font-semibold tracking-wide text-slate-600 uppercase mb-1';
+            answerHeading.textContent = answers.length > 1 ? 'Correct Answers' : 'Correct Answer';
+            answerContainer.appendChild(answerHeading);
+
+            const answerBody = document.createElement('p');
+            answerBody.className = 'text-sm text-slate-700';
+            answerBody.innerHTML = processTextForDisplay(answers.join(', '), keywordsToHighlight);
+            answerContainer.appendChild(answerBody);
+
+            questionCard.appendChild(answerContainer);
+        }
+
+        if (explanation) {
+            const explanationPara = document.createElement('p');
+            explanationPara.className = 'text-sm text-slate-600 border-t border-slate-200 pt-2';
+            explanationPara.innerHTML = `<span class="font-medium text-slate-700">Why:</span> ${processTextForDisplay(explanation, keywordsToHighlight)}`;
+            questionCard.appendChild(explanationPara);
+        }
+
+        fragment.appendChild(questionCard);
+    });
+
+    if (renderedQuestions === 0) {
+        container.innerHTML = '<p class="text-slate-500 text-sm p-4 text-center">No quiz data available.</p>';
+        return;
+    }
+
+    container.appendChild(fragment);
+}
+
 function displayResults(results) {
     const resultsSection = document.getElementById('resultsSection');
     const summaryOutput = document.getElementById('summaryOutput');
@@ -1088,6 +1216,7 @@ window.setupTabs = setupTabs;
 window.processTextForDisplay = processTextForDisplay;
 window.displayResults = displayResults;
 window.renderSummary = renderSummary;
+window.renderQuiz = renderQuiz;
 window.renderInteractiveFlashcards = renderInteractiveFlashcards; 
 window.updateNav = updateNav; 
 window.initializeQuizSystem = initializeQuizSystem;
