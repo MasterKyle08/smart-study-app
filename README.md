@@ -2,7 +2,7 @@
 
 Turn worksheets, PDFs, photos, DOCX files, or pasted notes into summaries, flashcards, and quizzes. Works in the browser on phones and computers.
 
-Free users share **Gemma 4** (`gemma-4-31b-it`) from Google’s free tier. Premium is optional and cheap ($5/month): it uses **Gemini 3.5 Flash-Lite** on a separate API key so paid traffic does not empty the shared free pool.
+Free users share **Gemma 4** (`gemma-4-31b-it`) from Google’s free tier. Premium is optional ($6/month): it uses **Gemini Flash-Lite** on a separate API key so paid traffic does not empty the shared free pool.
 
 Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/smart-study-app)
 
@@ -35,14 +35,13 @@ Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/s
 
 ## Local setup (new laptop)
 
-You do **not** upload `.env`, `node_modules`, or the SQLite files. Those stay on the machine.
+You do **not** upload `.env`, `node_modules`, or the SQLite files. Those stay on the machine. Copy `.env` from this laptop (USB, password manager, etc.) — it is gitignored on purpose.
 
 ```bash
 git clone https://github.com/MasterKyle08/smart-study-app.git
 cd smart-study-app
 npm install
-copy .env.example .env   # Windows
-# then fill in real values, or copy .env from your old laptop (never commit it)
+# place your private .env in the project root (never commit it)
 npm start
 ```
 
@@ -58,17 +57,65 @@ Open [http://localhost:3000](http://localhost:3000).
 
 The database schema is also applied when the server starts.
 
-### Required `.env` for a basic run
+### `.env` (local only)
+
+Required to boot:
 
 ```
-GOOGLE_API_KEY=          # AI Studio key for free Gemma
-JWT_SECRET=              # long random string
+GOOGLE_API_KEY=
+GOOGLE_AI_MODEL_NAME=gemma-4-31b-it
+JWT_SECRET=
 TURSO_DATABASE_URL=
 TURSO_AUTH_TOKEN=
-ADMIN_EMAIL=             # your login email; this account is the owner admin
+ADMIN_EMAIL=
 ```
 
-Copy the rest from `.env.example`. Never put API keys, Twilio tokens, Stripe secrets, or a Google service-account JSON in the frontend or in git.
+Fill in when you are ready (already listed in the local `.env` as empty):
+
+```
+GOOGLE_FREE_API_KEY=              # optional alias for the free key
+GOOGLE_PREMIUM_API_KEY=           # second AI Studio project for Premium
+GOOGLE_PREMIUM_MODEL_NAME=gemini-3.5-flash-lite
+PREMIUM_USER_EMAILS=
+PREMIUM_MONTHLY_PRICE=6
+PREMIUM_PRICE_LABEL=$6 / month
+GEMMA_DAILY_BUDGET=1500
+FREE_DAILY_JOBS=24
+ANON_DAILY_JOBS=10
+PREMIUM_DAILY_JOBS=200
+AD_REWARDS_PER_DAY=2
+AD_COOLDOWN_HOURS=4
+JOBS_PER_AD=1
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_ID=
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=
+LEMONSQUEEZY_API_KEY=
+LEMONSQUEEZY_VARIANT_ID=
+ADSENSE_CLIENT_ID=
+ADSENSE_SLOT_ID=
+ADSENSE_VIEW_SECONDS=15
+ADMIN_NOTIFY_EMAIL=
+ADMIN_OWNER_EMAILS=
+ADMIN_SESSION_MINUTES=20
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_FROM_NUMBER=
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+RESEND_API_KEY=
+EMAIL_FROM=
+GCP_PROJECT_ID=
+GOOGLE_APPLICATION_CREDENTIALS=
+GCP_SERVICE_ACCOUNT_JSON=
+GCP_MONITORING_CACHE_SECONDS=90
+```
+
+Never put API keys, Twilio tokens, Stripe secrets, or a Google service-account JSON in the frontend or in git.
 
 ## Pages
 
@@ -83,7 +130,7 @@ Copy the rest from `.env.example`. Never put API keys, Twilio tokens, Stripe sec
 ## Free vs Premium
 
 - **Free:** Gemma 4, shared site-wide budget (default 1,500 requests/day, midnight Pacific). Personal cap default 24 study actions/day (10 if not signed in). Ads can add +1 action, at most twice a day, with a 4-hour gap. Ads cannot buy extra Google quota.
-- **Premium:** $5/month. Gemini Flash-Lite on `GOOGLE_PREMIUM_API_KEY`. Default 200 actions/day. Does not consume the Gemma pool.
+- **Premium:** $6/month. Gemini Flash-Lite on `GOOGLE_PREMIUM_API_KEY`. Default 200 actions/day. Does not consume the Gemma pool.
 
 The public meter calls **your** backend only: `GET /api/usage/quota` returns `{ used, limit }`. Google Cloud credentials never go to the browser.
 
