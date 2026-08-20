@@ -10,6 +10,30 @@ const User = require('../models/User');
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
 
+function premiumEmails() {
+  return (process.env.PREMIUM_USER_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function resolvePlan(user) {
+  if (!user) return 'free';
+  if (user.email && premiumEmails().includes(String(user.email).toLowerCase())) return 'premium';
+  return user.plan === 'premium' ? 'premium' : 'free';
+}
+
+function publicUser(user) {
+  const { isAdminUser } = require('../utils/adminRules');
+  return {
+    id: Number(user.id),
+    email: user.email,
+    plan: resolvePlan(user),
+    isAdmin: isAdminUser(user),
+    isBanned: Boolean(user.isBanned || user.is_banned),
+  };
+}
+
 if (!JWT_SECRET) {
   console.error("FATAL ERROR: JWT_SECRET is not defined in auth.js. Please set it in your .env file.");
   process.exit(1);
@@ -39,10 +63,11 @@ async function registerUser(email, password) {
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
   const newUser = await User.create(email, passwordHash);
 
-  const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1d' }); // Token expires in 1 day
+  const safeUser = publicUser(newUser);
+  const token = jwt.sign({ userId: safeUser.id, email: safeUser.email, plan: safeUser.plan }, JWT_SECRET, { expiresIn: '7d' });
 
   return {
-    user: { id: newUser.id, email: newUser.email },
+    user: safeUser,
     token,
   };
 }
@@ -73,10 +98,17 @@ async function loginUser(email, password) {
     throw error;
   }
 
-  const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
+  if (user.isBanned || Number(user.is_banned)) {
+    const error = new Error(user.ban_reason ? `This account has been disabled. ${user.ban_reason}` : 'This account has been disabled.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const safeUser = publicUser(user);
+  const token = jwt.sign({ userId: safeUser.id, email: safeUser.email, plan: safeUser.plan }, JWT_SECRET, { expiresIn: '7d' });
 
   return {
-    user: { id: user.id, email: user.email },
+    user: safeUser,
     token,
   };
 }
@@ -84,4 +116,6 @@ async function loginUser(email, password) {
 module.exports = {
   registerUser,
   loginUser,
+  resolvePlan,
+  publicUser,
 };

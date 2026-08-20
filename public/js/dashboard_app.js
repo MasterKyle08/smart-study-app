@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const sessionsListContainer = document.getElementById('sessionsList');
     const loadingSessionsMessage = document.getElementById('loadingSessions');
     const sessionDetailModal = document.getElementById('sessionDetailModal');
@@ -46,9 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentKeywordsForModalHighlighting = [];
     window.currentDashboardSessionData = null; 
 
-    if (!localStorage.getItem('authToken')) {
-        window.location.href = 'index.html'; 
-        return; 
+    try {
+        if (typeof apiGetCurrentUser !== 'function') throw new Error('missing auth');
+        const me = await apiGetCurrentUser();
+        if (me && me.user && me.user.isAdmin) {
+            localStorage.setItem('userIsAdmin', '1');
+            document.querySelectorAll('.nav-auth-admin').forEach((el) => el.classList.remove('hidden'));
+        }
+    } catch (_err) {
+        window.location.href = '/';
+        return;
     }
     if (typeof window.setupTabs === 'function') window.setupTabs('#sessionDetailModal .tabs');
 
@@ -67,7 +74,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     sessionsListContainer.appendChild(createSessionCard(session));
                 });
             } else {
-                sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
+                sessionsListContainer.innerHTML = `
+                    <div class="empty-state col-span-full">
+                        <h3>No saved sessions yet</h3>
+                        <p>Upload a worksheet or paste notes on the home page. Signed-in study sets appear here so you can reopen them later.</p>
+                        <a href="/" class="btn-primary mt-4 inline-flex">Start studying</a>
+                    </div>`;
             }
         } catch (error) {
             const message = error.data?.message || error.message || 'Could not load your sessions. Please try again.';
@@ -84,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createSessionCard(session) {
         const card = document.createElement('div');
-        card.className = 'bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 ease-in-out overflow-hidden flex flex-col';
+        card.className = 'session-card bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 ease-in-out overflow-hidden flex flex-col cursor-pointer';
         card.dataset.sessionId = session.id;
 
         const contentDiv = document.createElement('div');
@@ -169,7 +181,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     await apiDeleteSession(sessionToDeleteId);
                     cardElementToDelete.remove(); 
                     if (sessionsListContainer && sessionsListContainer.children.length === 0) {
-                        sessionsListContainer.innerHTML = '<p class="text-slate-500 col-span-full text-center py-5">You have no saved study sessions yet.</p>';
+                        sessionsListContainer.innerHTML = `
+                    <div class="empty-state col-span-full">
+                        <h3>No saved sessions yet</h3>
+                        <p>Upload a worksheet or paste notes on the home page. Signed-in study sets appear here so you can reopen them later.</p>
+                        <a href="/" class="btn-primary mt-4 inline-flex">Start studying</a>
+                    </div>`;
                     }
                 } catch (error) {
                      alert(`Failed to delete session: ${error.message || 'Please try again.'}`);
@@ -604,5 +621,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(typeof window.setCurrentYear === 'function') window.setCurrentYear('currentYearDashboard');
     loadUserSessions();
+    const dueList = document.getElementById('dueCardsList');
+    if (dueList && typeof apiListFlashcardReviews === 'function') {
+        try {
+            const { reviews } = await apiListFlashcardReviews(null, { dueOnly: true });
+            const due = (reviews || []).filter((item) => !item.dueAt || new Date(item.dueAt) <= new Date());
+            if (!due.length) {
+                dueList.textContent = 'Nothing is due. Study flashcards and rate them Again/Hard/Good/Easy to fill this list.';
+            } else {
+                dueList.innerHTML = due.slice(0, 12).map((item) => `<div class="py-2 border-b" style="border-color:var(--border)"><strong>${item.term || item.cardKey}</strong> · due ${new Date(item.dueAt).toLocaleString()}</div>`).join('');
+            }
+        } catch (_err) {
+            dueList.textContent = 'Could not load due cards.';
+        }
+    }
+
+    const upgradeButton = document.getElementById('upgradeButton');
+    if (upgradeButton) {
+        (async () => {
+            try {
+                const config = await apiBillingConfig();
+                const copy = document.getElementById('billingCopy');
+                if (copy) {
+                    copy.textContent = (config.pricing && config.pricing.why)
+                        || (config.premiumEnabled
+                            ? `Premium is ${config.monthlyPriceLabel}. Stripe checkout is ready.`
+                            : `Premium is ${config.monthlyPriceLabel}. Add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to enable checkout.`);
+                }
+                const notes = document.getElementById('pricingNotes');
+                if (notes && config.pricing && Array.isArray(config.pricing.costNotes)) {
+                    notes.innerHTML = config.pricing.costNotes.map((line) => `<li>${line}</li>`).join('');
+                }
+                upgradeButton.textContent = `Upgrade ${config.monthlyPriceLabel || '$5 / month'}`;
+                upgradeButton.disabled = !config.providers.stripe;
+            } catch (_err) {
+                upgradeButton.disabled = true;
+            }
+        })();
+        upgradeButton.addEventListener('click', async () => {
+            try {
+                const session = await apiCreateCheckout('stripe');
+                if (session.url) window.location.href = session.url;
+            } catch (error) {
+                const status = document.getElementById('billingStatus');
+                if (status) status.textContent = error.message || 'Checkout is not configured yet.';
+            }
+        });
+    }
 });
 

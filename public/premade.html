@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Quiz library — Smart Study</title>
+    <script>(function(){try{var t=localStorage.getItem('ss-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen flex flex-col">
+    <header class="site-header">
+        <div class="site-header-inner">
+            <a href="/" class="brand-link">
+                <span class="brand-mark">S</span>
+                <span class="brand-name">Smart Study</span>
+            </a>
+            <nav class="nav-desktop" aria-label="Primary">
+                <a href="/" id="homeNavButton" class="nav-link">Home</a>
+                <a href="/practice" class="nav-link">Practice</a>
+                <a href="/premade" id="premadeNavButton" class="nav-link nav-link-active">Quiz library</a>
+                <button id="dashboardNavButton" class="nav-link nav-auth-user hidden">Dashboard</button>
+                <a href="/admin" class="nav-link nav-auth-admin hidden">Admin</a>
+                <select id="themeSelect" class="theme-select" aria-label="Color theme">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                <button id="loginNavButton" class="btn-secondary nav-auth-guest">Sign in</button>
+                <button id="registerNavButton" class="btn-primary nav-auth-guest">Create account</button>
+                <button id="logoutNavButton" class="btn-danger nav-auth-user hidden">Sign out</button>
+            </nav>
+            <button id="mobileNavToggle" class="icon-btn" type="button" aria-expanded="false" aria-controls="mobileNavDrawer" aria-label="Open menu">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+        </div>
+        <div id="mobileNavDrawer" class="mobile-drawer hidden">
+            <a href="/" class="nav-link w-full justify-start">Home</a>
+            <a href="/practice" class="nav-link w-full justify-start">Practice</a>
+            <a href="/premade" class="nav-link w-full justify-start nav-link-active">Quiz library</a>
+            <button class="nav-link w-full justify-start nav-auth-user hidden" onclick="document.getElementById('dashboardNavButton').click()">Dashboard</button>
+            <a href="/admin" class="nav-link w-full justify-start nav-auth-admin hidden">Admin</a>
+            <button class="btn-secondary w-full nav-auth-guest" onclick="document.getElementById('loginNavButton').click()">Sign in</button>
+            <button class="btn-primary w-full nav-auth-guest" onclick="document.getElementById('registerNavButton').click()">Create account</button>
+            <button class="btn-danger w-full nav-auth-user hidden" onclick="document.getElementById('logoutNavButton').click()">Sign out</button>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
+        <section class="mb-8 sm:mb-10">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl sm:text-3xl font-semibold text-slate-900">Quiz library</h1>
+                    <p class="text-slate-600 text-sm mt-1">Open a ready-made quiz or, if you are signed in, generate one to share.</p>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" id="premadeSearchInput" class="form-input w-full md:w-72 rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Search by topic or tag...">
+                    <button id="premadeSearchButton" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-teal-400 transition duration-150">Search</button>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+            <aside class="lg:col-span-1 space-y-4">
+                <div class="bg-white rounded-xl shadow-lg border border-slate-200 p-5 sm:p-6">
+                    <h2 class="text-lg font-semibold text-slate-800 mb-2">Available Quizzes</h2>
+                    <p class="text-xs text-slate-500 mb-4">Click a quiz to preview details and start right away.</p>
+                    <div id="premadeListEmpty" class="hidden text-sm text-slate-500">No premade quizzes found yet. Try a different search.</div>
+                    <ul id="premadeListContainer" class="space-y-3 max-h-[60vh] overflow-y-auto pr-1"></ul>
+                </div>
+            </aside>
+
+            <section class="lg:col-span-2 space-y-6">
+                <div id="premadeCreatorNotice" class="bg-white rounded-xl shadow-lg border border-slate-200 p-5 sm:p-6 text-sm text-slate-600">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <span>Create custom premade quizzes by logging in. You can still browse and launch public quizzes without an account.</span>
+                        <button id="premadeNoticeLoginBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Login to Create</button>
+                    </div>
+                </div>
+
+                <div id="premadeCreatorSection" class="hidden bg-white rounded-xl shadow-lg border border-slate-200 p-5 sm:p-6 space-y-5">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <h2 class="text-xl font-semibold text-slate-800">Build a Premade Quiz</h2>
+                            <p class="text-slate-600 text-sm mt-1">Generate a reusable quiz and share a direct link instantly.</p>
+                        </div>
+                        <a href="/dashboard.html" class="inline-flex items-center px-3 sm:px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs sm:text-sm font-semibold rounded-lg transition duration-150">Back to Dashboard</a>
+                    </div>
+                    <form id="premadeQuizForm" class="space-y-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label for="premadeTitle" class="block text-sm font-medium text-slate-700 mb-1">Quiz Title<span class="text-red-500">*</span></label>
+                                <input type="text" id="premadeTitle" name="premadeTitle" required class="form-input w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Driver Permit Essentials">
+                            </div>
+                            <div>
+                                <label for="premadeTopic" class="block text-sm font-medium text-slate-700 mb-1">Topic or Audience</label>
+                                <input type="text" id="premadeTopic" name="premadeTopic" class="form-input w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Learner drivers, new team members">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="premadeDescription" class="block text-sm font-medium text-slate-700 mb-1">Short Description</label>
+                            <textarea id="premadeDescription" name="premadeDescription" rows="2" class="form-textarea w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Covers the must-know rules before taking the permit test."></textarea>
+                        </div>
+                        <div>
+                            <label for="premadeKeyInstructions" class="block text-sm font-medium text-slate-700 mb-1">Key Points or Instructions for AI</label>
+                            <textarea id="premadeKeyInstructions" name="premadeKeyInstructions" rows="3" class="form-textarea w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Emphasize safe following distances, right-of-way at four-way stops, and penalties for texting."></textarea>
+                        </div>
+                        <div>
+                            <label for="premadeSourceText" class="block text-sm font-medium text-slate-700 mb-1">Reference Material (optional)</label>
+                            <textarea id="premadeSourceText" name="premadeSourceText" rows="4" class="form-textarea w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Paste policy notes or a short knowledge base excerpt to anchor the quiz."></textarea>
+                            <p class="text-xs text-slate-500 mt-1">Tip: Provide 2-4 concise paragraphs. The AI will build questions just from this context.</p>
+                        </div>
+                        <div>
+                            <label for="premadeTags" class="block text-sm font-medium text-slate-700 mb-1">Tags (optional)</label>
+                            <input type="text" id="premadeTags" name="premadeTags" class="form-input w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="safety, onboarding, compliance">
+                            <p class="text-xs text-slate-500 mt-1">Separate tags with commas to help people find this quiz.</p>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <fieldset>
+                                <legend class="block text-sm font-medium text-slate-700 mb-2">Question Types</legend>
+                                <div class="space-y-2">
+                                    <label class="inline-flex items-center space-x-2"><input type="checkbox" name="premadeQuestionType" value="multiple_choice" checked class="form-checkbox h-4 w-4 text-teal-600 border-slate-300 focus:ring-teal-500"><span class="text-sm text-slate-700">Multiple Choice</span></label>
+                                    <label class="inline-flex items-center space-x-2"><input type="checkbox" name="premadeQuestionType" value="select_all_that_apply" class="form-checkbox h-4 w-4 text-teal-600 border-slate-300 focus:ring-teal-500"><span class="text-sm text-slate-700">Select All That Apply</span></label>
+                                    <label class="inline-flex items-center space-x-2"><input type="checkbox" name="premadeQuestionType" value="short_answer" class="form-checkbox h-4 w-4 text-teal-600 border-slate-300 focus:ring-teal-500"><span class="text-sm text-slate-700">Short Answer</span></label>
+                                </div>
+                            </fieldset>
+                            <div>
+                                <label for="premadeQuestionCount" class="block text-sm font-medium text-slate-700 mb-1">Number of Questions</label>
+                                <select id="premadeQuestionCount" name="premadeQuestionCount" class="form-select w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm">
+                                    <option value="ai_choice">Let AI decide</option>
+                                    <option value="5">5 questions</option>
+                                    <option value="7">7 questions</option>
+                                    <option value="10">10 questions</option>
+                                    <option value="12">12 questions</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="premadeDifficulty" class="block text-sm font-medium text-slate-700 mb-1">Difficulty</label>
+                                <select id="premadeDifficulty" name="premadeDifficulty" class="form-select w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm">
+                                    <option value="easy">Easy</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <button type="submit" class="w-full sm:w-auto px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-teal-400 transition duration-150">Generate Premade Quiz</button>
+                            <p class="text-xs text-slate-500">Your quiz gets a unique shareable link right away.</p>
+                        </div>
+                    </form>
+                    <div id="premadeQuizFormMessage" class="text-sm"></div>
+                </div>
+
+                <div id="premadeOverviewCard" class="bg-white rounded-xl shadow-lg border border-slate-200 p-5 sm:p-6">
+                    <div id="premadeOverviewPlaceholder" class="text-slate-500 text-sm">
+                        Select a premade quiz from the list or share a direct link like <code class="bg-slate-100 px-1.5 py-0.5 rounded">/quiz/your-slug</code> to open it instantly.
+                    </div>
+                    <div id="premadeOverviewContent" class="hidden space-y-4">
+                        <div>
+                            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                <div>
+                                    <h2 id="premadeTitleDisplay" class="text-2xl font-semibold text-slate-800"></h2>
+                                    <p id="premadeDescriptionDisplay" class="text-sm text-slate-600 mt-1"></p>
+                                </div>
+                                <button id="startPremadeQuizButton" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400 transition duration-150">Start Quiz</button>
+                            </div>
+                            <div id="premadeMetaDisplay" class="mt-4 flex flex-wrap gap-2 text-xs text-slate-500"></div>
+                        </div>
+                        <div id="premadeTagsDisplay" class="flex flex-wrap gap-2"></div>
+                        <div class="text-xs text-slate-500">Shareable link: <a id="premadeShareLink" href="#" class="text-teal-600 hover:text-teal-700 underline break-words"></a></div>
+                        <div id="premadeOwnerActions" class="hidden mt-4 pt-4 border-t space-y-3" style="border-color:var(--border)">
+                            <h3 class="text-sm font-semibold">Owner controls</h3>
+                            <label class="block text-xs">Title<input id="ownerTitle" class="form-input w-full rounded-lg text-sm mt-1"></label>
+                            <label class="block text-xs">Description<textarea id="ownerDescription" rows="2" class="form-textarea w-full rounded-lg text-sm mt-1"></textarea></label>
+                            <label class="inline-flex items-center gap-2 text-sm"><input id="ownerPublic" type="checkbox" class="form-checkbox"> Public</label>
+                            <div class="flex flex-wrap gap-2">
+                                <button id="ownerSaveBtn" type="button" class="btn-secondary">Save changes</button>
+                                <button id="ownerDeleteBtn" type="button" class="btn-danger">Delete quiz</button>
+                            </div>
+                            <p id="ownerActionStatus" class="text-sm"></p>
+                        </div>
+                    </div>
+                    <div id="premadeOverviewStatus" class="mt-4 text-sm"></div>
+                </div>
+
+                <div id="premadeQuizInterfaceWrapper" class="bg-white rounded-xl shadow-lg border border-slate-200 p-5 sm:p-6">
+                    <div id="quizInterfaceContainer" class="hidden"></div>
+                    <div id="quizResultsContainer" class="hidden mt-6"></div>
+                    <div id="quizLoadingStatus" class="mt-4 text-center text-sm"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="authModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+        <div class="modal-content bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 ease-out scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100">
+            <div class="flex justify-between items-start mb-6">
+                <h3 id="modalTitle" class="text-xl sm:text-2xl font-semibold text-slate-800">Login</h3>
+                <button id="closeModalButton" class="text-slate-400 hover:text-slate-600 text-3xl leading-none -mt-1 focus:outline-none">&times;</button>
+            </div>
+            <form id="authForm" class="space-y-5">
+                <div>
+                    <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email:</label>
+                    <input type="email" id="email" name="email" required placeholder="your@email.com" class="form-input mt-1 block w-full px-3 py-2 bg-white border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password:</label>
+                    <input type="password" id="password" name="password" required class="form-input mt-1 block w-full px-3 py-2 bg-white border-slate-300 rounded-lg shadow-sm placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                </div>
+                <button type="submit" id="authSubmitButton" class="w-full px-6 py-2.5 sm:py-3 mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition duration-150 ease-in-out text-sm sm:text-base">Login</button>
+                <div id="authFormMessage" class="text-sm mt-3"></div>
+                <p id="authFormToggle" class="text-xs sm:text-sm text-center text-slate-600 mt-4">Don't have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Register</a></p>
+            </form>
+        </div>
+    </div>
+
+    <footer class="mt-auto border-t border-slate-200 bg-white/80">
+        <div class="container mx-auto px-4 py-6 text-center text-sm text-slate-500">
+            <p>&copy; <span id="currentYearPremade"></span> Smart Study.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="/js/theme.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/usage-meter.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/premade.js"></script>
+</body>
+</html>

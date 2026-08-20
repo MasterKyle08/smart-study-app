@@ -6,51 +6,82 @@ const express = require('express');
 const fileService = require('../services/file');
 const aiService = require('../services/ai'); 
 const Session = require('../models/Session');
-const authenticateToken = require('../middleware/auth'); // Middleware for protected routes
+const authenticateToken = require('../middleware/auth');
+const { userFromRequest } = require('../middleware/auth');
+const authService = require('../services/auth');
+const usage = require('../services/usage');
+const { assertOwnsRecord } = require('../utils/studyContent');
+const { reviewCard } = require('../utils/srs');
+const FlashcardReview = require('../models/FlashcardReview');
 
 const router = express.Router();
 
+async function optionalUser(req) {
+  return userFromRequest(req);
+}
+
+async function runAiJob(req, fn) {
+  const user = await optionalUser(req);
+  if (user && (user.isBanned || Number(user.is_banned))) {
+    const error = new Error('This account has been disabled.');
+    error.statusCode = 403;
+    throw error;
+  }
+  const premium = authService.resolvePlan(user) === 'premium';
+  return usage.runWithContext({ user, ip: req.ip, premium, calls: [] }, async () => {
+    await usage.assertJobAllowed({ user, ip: req.ip, premium });
+    const result = await fn({ user, premium });
+    await usage.recordJob();
+    const usageThisRun = usage.jobStats();
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      result.usageThisRun = usageThisRun;
+    }
+    return result;
+  });
+}
+
+async function withUsageContext(req, fn) {
+  const user = await optionalUser(req);
+  const premium = authService.resolvePlan(user) === 'premium';
+  return usage.runWithContext({ user, ip: req.ip, premium, calls: [] }, () => fn({ user, premium }));
+}
+
 // --- Process Uploaded Content ---
 router.post('/process', async (req, res) => {
-  console.log("--- ROUTE HIT: /api/study/process ---"); 
-  
-  // Determine user ID (if authenticated)
-  let userId = null;
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (token && process.env.JWT_SECRET) { // Ensure JWT_SECRET is available
-    try {
-      const jwt = require('jsonwebtoken');
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const User = require('../models/User'); 
-      const userExists = await User.findById(decoded.userId);
-      if (userExists) userId = decoded.userId;
-    } catch (err) { 
-        console.warn("[/process] JWT verification failed or user not found, proceeding as anonymous. Error:", err.message);
-    }
-  } else if (token && !process.env.JWT_SECRET) {
-      console.warn("[/process] JWT token present but JWT_SECRET is not set. Cannot authenticate user.");
-  }
-
-
   try {
+    const payload = await runAiJob(req, async ({ user, premium }) => {
+  const userId = user ? Number(user.id) : null;
     const { 
         extractedText, originalFilename, originalContentType, outputFormats,
         summaryLengthPreference, summaryStylePreference,
         summaryKeywords: summaryKeywordsString, 
         summaryAudiencePurpose,
         summaryNegativeKeywords: summaryNegativeKeywordsString,
-        quizOptions // This should be the object from the frontend now
+        quizOptions,
+        visionImages,
     } = req.body;
 
-    if (!extractedText || !originalFilename || !originalContentType || !outputFormats) {
-      console.error("[/process] Validation Error: Missing required fields for processing.");
-      return res.status(400).json({ message: 'Missing required fields for processing.' });
+    let sourceText = extractedText || '';
+    const compact = sourceText.replace(/\s+/g, ' ').trim();
+    const visionNeeded = Array.isArray(visionImages) && visionImages.length > 0 && compact.length < 250;
+    if (visionNeeded) {
+      try {
+        const visionText = await aiService.extractTextFromImages(visionImages.slice(0, 3), { premium });
+        sourceText = [sourceText, visionText].filter(Boolean).join('\n\n').trim();
+      } catch (visionError) {
+        console.warn('[/process] Vision extraction failed, continuing with existing text:', visionError.message);
+      }
+    }
+
+    if (!sourceText || !originalFilename || !originalContentType || !outputFormats) {
+      const error = new Error('Missing required fields for processing. Add a file, paste notes, or attach an image.');
+      error.statusCode = 400;
+      throw error;
     }
     if (!Array.isArray(outputFormats) || outputFormats.length === 0) {
-      console.error("[/process] Validation Error: outputFormats must be a non-empty array.");
-      return res.status(400).json({ message: 'outputFormats must be a non-empty array.' });
+      const error = new Error('outputFormats must be a non-empty array.');
+      error.statusCode = 400;
+      throw error;
     }
 
     const summaryKeywordsArray = summaryKeywordsString 
@@ -58,9 +89,8 @@ router.post('/process', async (req, res) => {
     const summaryNegativeKeywordsArray = summaryNegativeKeywordsString 
         ? summaryNegativeKeywordsString.split(',').map(k => k.trim()).filter(k => k) : [];
 
-    console.log("[/process] Calling fileService.processUploadedText with quizOptions:", JSON.stringify(quizOptions));
     const results = await fileService.processUploadedText({
-      extractedText, 
+      extractedText: sourceText, 
       outputFormats, 
       originalFilename, 
       originalContentType, 
@@ -70,7 +100,8 @@ router.post('/process', async (req, res) => {
       summaryKeywords: summaryKeywordsArray,
       summaryAudiencePurpose,
       summaryNegativeKeywords: summaryNegativeKeywordsArray,
-      quizOptions // Pass the structured quizOptions object
+      quizOptions,
+      premium,
     });
     
     console.log("[/process] fileService.processUploadedText successful. Sending response.");
@@ -82,13 +113,14 @@ router.post('/process', async (req, res) => {
     if (results.quiz && typeof results.quiz === 'string') {
         try { results.quiz = JSON.parse(results.quiz); } catch (e) { console.error("Error parsing quiz string in route:", e); }
     }
-    results.quizOptions = quizOptions; // Also return the options used for this generation
-    results.summaryKeywords = summaryKeywordsArray; // Return keywords used for summary
-
-    res.status(200).json(results);
+    results.quizOptions = quizOptions;
+    results.summaryKeywords = summaryKeywordsArray;
+    return results;
+    });
+    res.status(200).json(payload);
   } catch (error) {
     console.error("[/process] Error in route handler:", error.message, error.stack ? error.stack.substring(0, 500) : '', error.originalError ? `Original Error: ${error.originalError.message}` : '');
-    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process content.' });
+    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process content.', usage: error.usage });
   }
 });
 
@@ -104,8 +136,8 @@ router.post('/flashcard-interact', async (req, res) => {
              return res.status(400).json({ message: 'Missing userQuery or chatHistory for chat_message interaction.' });
         }
 
-        const result = await aiService.getFlashcardInteractionResponse(card, interactionType, userAnswer, userQuery, chatHistory);
-        res.status(200).json(result); // `result` should now contain { feedback, correctness } for submit_answer
+        const result = await withUsageContext(req, ({ premium }) => aiService.getFlashcardInteractionResponse(card, interactionType, userAnswer, userQuery, chatHistory, { premium }));
+        res.status(200).json(result);
     } catch (error) {
         console.error("[/flashcard-interact] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
         res.status(error.statusCode || 500).json({ message: error.message || 'Failed to process flashcard interaction.' });
@@ -113,17 +145,19 @@ router.post('/flashcard-interact', async (req, res) => {
 });
 
 // --- Quiz Generation and Interactions ---
-router.post('/quiz-generate', async (req, res) => { // For generating a new quiz from text + options
+router.post('/quiz-generate', async (req, res) => {
     try {
         const { extractedText, quizOptions } = req.body;
         if (!extractedText || !quizOptions || !Array.isArray(quizOptions.questionTypes) || quizOptions.questionTypes.length === 0) {
             return res.status(400).json({ message: 'Extracted text and valid quiz options (including questionTypes) are required.' });
         }
-        const quizData = await aiService.generateQuizWithOptions(extractedText, quizOptions);
-        res.status(200).json({ quiz: quizData, quizOptionsUsed: quizOptions }); // Return generated quiz and options used
+        const payload = await runAiJob(req, async ({ premium }) => {
+          const quizData = await aiService.generateQuizWithOptions(extractedText, quizOptions, { premium });
+          return { quiz: quizData, quizOptionsUsed: quizOptions };
+        });
+        res.status(200).json(payload);
     } catch (error) {
-        console.error("[/quiz-generate] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
-        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to generate quiz.' });
+        res.status(error.statusCode || 500).json({ message: error.message || 'Failed to generate quiz.', usage: error.usage });
     }
 });
 
@@ -133,7 +167,7 @@ router.post('/quiz-answer-feedback', async (req, res) => {
         if (!question || userAnswer === undefined) { // userAnswer can be null or empty string
             return res.status(400).json({ message: 'Question object and user answer are required.' });
         }
-        const feedbackData = await aiService.getQuizAnswerFeedback(question, userAnswer);
+        const feedbackData = await withUsageContext(req, ({ premium }) => aiService.getQuizAnswerFeedback(question, userAnswer, { premium }));
         res.status(200).json(feedbackData); // Should return { feedback, correctness }
     } catch (error) {
         console.error("[/quiz-answer-feedback] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
@@ -147,7 +181,7 @@ router.post('/quiz-question-explanation', async (req, res) => {
         if (!question || !question.questionText || question.correctAnswer === undefined) {
             return res.status(400).json({ message: 'Valid question data (including questionText and correctAnswer) is required.' });
         }
-        const explanationData = await aiService.getQuizQuestionDetailedExplanation(question);
+        const explanationData = await withUsageContext(req, ({ premium }) => aiService.getQuizQuestionDetailedExplanation(question, { premium }));
         res.status(200).json(explanationData); // Should return { explanation: string }
     } catch (error) {
         console.error("[/quiz-question-explanation] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
@@ -161,7 +195,7 @@ router.post('/quiz-chat', async (req, res) => {
         if (!question || !Array.isArray(chatHistory) || !userQuery) {
             return res.status(400).json({ message: 'Question, chat history, and user query are required.' });
         }
-        const chatResponseData = await aiService.chatAboutQuizQuestion(question, chatHistory, userQuery);
+        const chatResponseData = await withUsageContext(req, ({ premium }) => aiService.chatAboutQuizQuestion(question, chatHistory, userQuery, { premium }));
         res.status(200).json(chatResponseData); // Should return { chatResponse, updatedChatHistory }
     } catch (error) {
         console.error("[/quiz-chat] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
@@ -175,7 +209,7 @@ router.post('/quiz-regenerate-question', async (req, res) => {
         if (!originalQuestion || !textContext) {
             return res.status(400).json({ message: 'Original question and text context are required.' });
         }
-        const newQuestion = await aiService.regenerateQuizQuestion(originalQuestion, textContext, difficultyHint);
+        const newQuestion = await withUsageContext(req, ({ premium }) => aiService.regenerateQuizQuestion(originalQuestion, textContext, difficultyHint, { premium }));
         res.status(200).json({ question: newQuestion }); // Return the new question object
     } catch (error) {
         console.error("[/quiz-regenerate-question] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
@@ -204,7 +238,7 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
 
     const existingSession = await Session.findById(sessionId);
     if (!existingSession) return res.status(404).json({ message: 'Session not found.' });
-    if (existingSession.user_id !== req.user.id) return res.status(403).json({ message: 'Access denied.' });
+    assertOwnsRecord(existingSession.user_id, req.user.id);
     if (!existingSession.extracted_text) return res.status(400).json({ message: 'Original text for session not found, cannot regenerate.' });
 
     const summaryKeywordsArray = summaryKeywordsString 
@@ -212,30 +246,31 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
     const summaryNegativeKeywordsArray = summaryNegativeKeywordsString 
         ? summaryNegativeKeywordsString.split(',').map(k => k.trim()).filter(k => k) : [];
 
+    const parsedUpdatedSession = await runAiJob(req, async ({ premium }) => {
     const regeneratedResults = {};
     if (outputFormats.includes('summary') || outputFormats.includes('all')) {
       regeneratedResults.summary = await aiService.generateSummary(
           existingSession.extracted_text, 
           summaryLengthPreference, summaryStylePreference,
           summaryKeywordsArray, summaryAudiencePurpose,
-          summaryNegativeKeywordsArray 
+          summaryNegativeKeywordsArray,
+          { premium }
       );
     }
     if (outputFormats.includes('flashcards') || outputFormats.includes('all')) {
-      const flashcardsArray = await aiService.generateFlashcards(existingSession.extracted_text);
-      regeneratedResults.flashcards = JSON.stringify(flashcardsArray); // Store as string
+      const flashcardsArray = await aiService.generateFlashcards(existingSession.extracted_text, { premium: authService.resolvePlan(req.user) === 'premium' });
+      regeneratedResults.flashcards = JSON.stringify(flashcardsArray);
     }
     if (outputFormats.includes('quiz') || outputFormats.includes('all')) {
-      // Use provided quizOptions for regeneration, or fall back to existing/default if not provided
       const currentQuizOptions = quizOptions || 
-                                 (existingSession.quiz_options ? JSON.parse(existingSession.quiz_options) : null) || // Assuming quiz_options stored in session
+                                 (existingSession.quiz_options ? JSON.parse(existingSession.quiz_options) : null) ||
                                  { questionTypes: ['multiple_choice'], numQuestions: 'ai_choice', difficulty: 'medium' };
       
       if (!currentQuizOptions.questionTypes || currentQuizOptions.questionTypes.length === 0) {
-        currentQuizOptions.questionTypes = ['multiple_choice']; // Ensure valid default
+        currentQuizOptions.questionTypes = ['multiple_choice'];
       }
-      const quizArray = await aiService.generateQuizWithOptions(existingSession.extracted_text, currentQuizOptions);
-      regeneratedResults.quiz = JSON.stringify(quizArray); // Store as string
+      const quizArray = await aiService.generateQuizWithOptions(existingSession.extracted_text, currentQuizOptions, { premium: authService.resolvePlan(req.user) === 'premium' });
+      regeneratedResults.quiz = JSON.stringify(quizArray);
       // Optionally, store quiz_options used if the schema supports it.
       // regeneratedResults.quiz_options = JSON.stringify(currentQuizOptions); 
     }
@@ -249,12 +284,13 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
         summary_keywords: summaryKeywordsArray, // Send back keywords used
         // quiz_options: updatedSession.quiz_options ? JSON.parse(updatedSession.quiz_options) : (quizOptions || null)
     };
-    if (quizOptions) parsedUpdatedSession.quiz_options = quizOptions; // Send back options used for this specific regen
-
+    if (quizOptions) parsedUpdatedSession.quiz_options = quizOptions;
+    return parsedUpdatedSession;
+    });
     res.status(200).json({ updatedSession: parsedUpdatedSession });
   } catch (error) {
     console.error("[/sessions/:id/regenerate] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
-    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to regenerate content.' });
+    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to regenerate content.', usage: error.usage });
   }
 });
 
@@ -268,7 +304,7 @@ router.post('/explain-snippet', async (req, res) => {
     if (snippet.length > 1000) { // Increased limit slightly, but keep it reasonable
         return res.status(400).json({ message: 'Snippet is too long (max 1000 characters). Please select a shorter text.'});
     }
-    const explanation = await aiService.explainTextSnippet(snippet);
+    const explanation = await withUsageContext(req, ({ premium }) => aiService.explainTextSnippet(snippet, { premium }));
     res.status(200).json({ explanation });
   } catch (error) {
     console.error("[/explain-snippet] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
@@ -303,7 +339,7 @@ router.get('/sessions/:id', authenticateToken, async (req, res) => {
 
     const session = await Session.findById(sessionId);
     if (!session) return res.status(404).json({ message: 'Session not found.' });
-    if (session.user_id !== req.user.id) return res.status(403).json({ message: 'Access denied to this session.' });
+    assertOwnsRecord(session.user_id, req.user.id);
     
     // Parse JSON fields for client
     const parsedSession = {
@@ -334,6 +370,62 @@ router.delete('/sessions/:id', authenticateToken, async (req, res) => {
         return res.status(error.statusCode || 404).json({ message: error.message });
     }
     res.status(error.statusCode || 500).json({ message: 'Failed to delete session.' });
+  }
+});
+
+router.post('/practice', async (req, res) => {
+  try {
+    const { subject, topic, mode, difficulty, numQuestions } = req.body;
+    if (!topic && !subject) {
+      return res.status(400).json({ message: 'Choose a subject or enter a topic.' });
+    }
+    const payload = await runAiJob(req, async ({ premium }) => {
+      const quiz = await aiService.generatePracticeSet({
+        subject,
+        topic,
+        mode,
+        difficulty,
+        numQuestions,
+      }, { premium });
+      return { quiz, quizOptionsUsed: { subject, topic, mode, difficulty, numQuestions } };
+    });
+    res.status(200).json(payload);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to generate practice set.', usage: error.usage });
+  }
+});
+
+router.post('/flashcard-review', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId, card, quality } = req.body;
+    if (!card || !card.term) {
+      return res.status(400).json({ message: 'Flashcard data is required.' });
+    }
+    const existing = await FlashcardReview.findOne(req.user.id, sessionId || null, card.term);
+    const next = reviewCard(existing || {}, quality);
+    const saved = await FlashcardReview.upsert({
+      userId: req.user.id,
+      sessionId: sessionId || null,
+      cardKey: card.term,
+      term: card.term,
+      review: next,
+    });
+    res.status(200).json({ review: saved });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to save review.' });
+  }
+});
+
+router.get('/flashcard-reviews', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = req.query.sessionId ? parseInt(req.query.sessionId, 10) : null;
+    const reviews = await FlashcardReview.listDue(req.user.id, {
+      sessionId: Number.isNaN(sessionId) ? null : sessionId,
+      includeUpcoming: req.query.all === '1',
+    });
+    res.status(200).json({ reviews });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ message: error.message || 'Failed to load reviews.' });
   }
 });
 

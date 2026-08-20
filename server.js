@@ -19,6 +19,17 @@ async function startServer() {
     // Initialize the database (create tables if they don't exist using Turso client)
     await initDB(); // initDB is now async
     console.log('Turso Database initialized successfully.');
+    if (!process.env.ADMIN_EMAIL) {
+      console.warn('ADMIN_EMAIL is not set. Set it to your account email to bootstrap the owner admin (cannot be demoted).');
+    }
+    try {
+      const Session = require('./backend/models/Session');
+      const hours = parseInt(process.env.ANONYMOUS_SESSION_TTL_HOURS || '24', 10);
+      const removed = await Session.deleteAnonymousOlderThan(hours);
+      if (removed) console.log(`Removed ${removed} expired anonymous session(s).`);
+    } catch (cleanupError) {
+      console.warn('Anonymous session cleanup skipped:', cleanupError.message);
+    }
 
     // Start the Express server
     app.listen(PORT, () => {

@@ -5,28 +5,40 @@
 
 const express = require('express');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 const rateLimitMiddleware = require('./middleware/rateLimit');
 const authRoutes = require('./routes/auth');
 const studyRoutes = require('./routes/study');
+const premadeRoutes = require('./routes/premade');
+const billingRoutes = require('./routes/billing');
+const usageRoutes = require('./routes/usage');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
-// --- Middleware ---
-
-app.use(require('cors')());
-app.use(express.json({ limit: '10mb' })); 
+app.use(require('cors')({ origin: true, credentials: true }));
+app.use(cookieParser());
+app.use('/api/billing/webhook/stripe', express.raw({ type: 'application/json' }));
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/billing/webhook/stripe') return next();
+  return express.json({ limit: '12mb' })(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); 
 
 // --- Favicon Route ---
 // Handle /favicon.ico requests to prevent 404 errors in logs if no favicon is present
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
+// Rate limiting must be registered before the API routers it is meant to protect.
+app.use('/api/', rateLimitMiddleware);
+
 // --- API Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/study', studyRoutes);
-
-// Rate limiting middleware (applied to all API routes)
-app.use('/api/', rateLimitMiddleware);
+app.use('/api/premade', premadeRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/usage', usageRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Serve static files from the 'public' directory (MOVED DOWN - AFTER API routes and favicon)
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -40,6 +52,24 @@ app.get('/', (req, res) => {
 // Serve dashboard.html for the /dashboard path
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
+});
+
+// Serve premade.html for premade quiz browsing
+app.get('/premade', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'premade.html'));
+});
+
+// Serve premade.html for direct quiz slugs
+app.get('/quiz/:slug', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'premade.html'));
+});
+
+app.get('/practice', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'practice.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
 });
 
 

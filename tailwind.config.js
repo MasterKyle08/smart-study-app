@@ -6,14 +6,21 @@ module.exports = {
   ],
   theme: {
     extend: {
-      // You can extend the default theme here if needed in the future
-      // For example, custom colors, fonts, etc.
-      // colors: {
-      //   'brand-blue': '#007bff',
-      // },
-      // fontFamily: {
-      //   sans: ['Inter', 'sans-serif'],
-      // },
+      colors: {
+        brand: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+        },
+      },
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      boxShadow: {
+        card: '0 10px 40px -18px rgba(15, 23, 42, 0.18)',
+      },
     },
   },
   plugins: [

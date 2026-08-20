@@ -5,6 +5,8 @@
 
 const express = require('express');
 const authService = require('../services/auth.js');
+const authenticateToken = require('../middleware/auth');
+const { setAuthCookie, clearAuthCookie } = require('../utils/cookies');
 
 const router = express.Router();
 
@@ -32,7 +34,8 @@ router.post('/register', async (req, res) => {
     }
 
     const result = await authService.registerUser(email, password);
-    res.status(201).json(result);
+    setAuthCookie(res, result.token);
+    res.status(201).json({ user: result.user });
   } catch (error) {
     console.error('Registration error:', error.message);
     if (error.statusCode) {
@@ -62,7 +65,8 @@ router.post('/login', async (req, res) => {
     }
 
     const result = await authService.loginUser(email, password);
-    res.status(200).json(result);
+    setAuthCookie(res, result.token);
+    res.status(200).json({ user: result.user });
   } catch (error) {
     console.error('Login error:', error.message);
     if (error.statusCode) {
@@ -70,6 +74,17 @@ router.post('/login', async (req, res) => {
     }
     res.status(500).json({ message: 'An error occurred during login.' });
   }
+});
+
+router.get('/me', authenticateToken, (req, res) => {
+  res.status(200).json({
+    user: authService.publicUser(req.user),
+  });
+});
+
+router.post('/logout', (req, res) => {
+  clearAuthCookie(res);
+  res.status(200).json({ message: 'Signed out.' });
 });
 
 module.exports = router;

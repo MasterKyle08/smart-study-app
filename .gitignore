@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment variables and cloud keys (never commit these)
 .env
+*service-account*.json
+gcp-key.json
 
 # SQLite database file
 /db/*.sqlite

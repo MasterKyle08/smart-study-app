@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Practice studio — Smart Study</title>
+    <script>(function(){try{var t=localStorage.getItem('ss-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen flex flex-col">
+    <header class="site-header">
+        <div class="site-header-inner">
+            <a href="/" class="brand-link"><span class="brand-mark">S</span><span class="brand-name">Smart Study</span></a>
+            <nav class="nav-desktop" aria-label="Primary">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/practice" class="nav-link nav-link-active">Practice</a>
+                <a href="/premade" class="nav-link">Quiz library</a>
+                <button id="dashboardNavButton" class="nav-link nav-auth-user hidden">Dashboard</button>
+                <a href="/admin" class="nav-link nav-auth-admin hidden">Admin</a>
+                <select id="themeSelect" class="theme-select" aria-label="Color theme">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                <button id="loginNavButton" class="btn-secondary nav-auth-guest">Sign in</button>
+                <button id="registerNavButton" class="btn-primary nav-auth-guest">Create account</button>
+                <button id="logoutNavButton" class="btn-danger nav-auth-user hidden">Sign out</button>
+            </nav>
+            <button id="mobileNavToggle" class="icon-btn" type="button" aria-expanded="false" aria-controls="mobileNavDrawer" aria-label="Open menu">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+        </div>
+        <div id="mobileNavDrawer" class="mobile-drawer hidden">
+            <a href="/" class="nav-link w-full justify-start">Home</a>
+            <a href="/practice" class="nav-link w-full justify-start nav-link-active">Practice</a>
+            <a href="/premade" class="nav-link w-full justify-start">Quiz library</a>
+            <select id="themeSelectMobile" class="theme-select w-full" aria-label="Color theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+            <button class="nav-link w-full justify-start nav-auth-user hidden" onclick="document.getElementById('dashboardNavButton').click()">Dashboard</button>
+            <a href="/admin" class="nav-link w-full justify-start nav-auth-admin hidden">Admin</a>
+            <button class="btn-secondary w-full nav-auth-guest" onclick="document.getElementById('loginNavButton').click()">Sign in</button>
+            <button class="btn-primary w-full nav-auth-guest" onclick="document.getElementById('registerNavButton').click()">Create account</button>
+            <button class="btn-danger w-full nav-auth-user hidden" onclick="document.getElementById('logoutNavButton').click()">Sign out</button>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
+        <section id="usageMeter" class="surface-card mb-6 text-sm"></section>
+        <section class="hero-card max-w-3xl">
+            <p class="hero-kicker">No upload needed</p>
+            <h1 class="text-3xl sm:text-4xl font-semibold tracking-tight mb-3">Practice CS, math, and data science</h1>
+            <p class="text-sm sm:text-base leading-relaxed" style="color:var(--muted)">Generate topic drills: code tracing, calculus numbers, SQL/stats questions, and worked problems. Uses one Gemma request per set.</p>
+        </section>
+
+        <section class="surface-card mb-8">
+            <form id="practiceForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="practiceSubject" class="block text-sm font-medium mb-1">Subject</label>
+                    <select id="practiceSubject" class="form-select w-full rounded-xl text-sm">
+                        <option value="computer-science">Computer science</option>
+                        <option value="data-science">Data science</option>
+                        <option value="calculus">Calculus</option>
+                        <option value="statistics">Statistics</option>
+                        <option value="chemistry">Chemistry</option>
+                        <option value="physics">Physics</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="practiceMode" class="block text-sm font-medium mb-1">Mode</label>
+                    <select id="practiceMode" class="form-select w-full rounded-xl text-sm">
+                        <option value="concept-quiz">Concept quiz</option>
+                        <option value="code-tracing">Code tracing / output</option>
+                        <option value="worked-problems">Worked problems</option>
+                        <option value="formula-drill">Formula drill</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label for="practiceTopic" class="block text-sm font-medium mb-1">Topic</label>
+                    <input id="practiceTopic" class="form-input w-full rounded-xl text-sm" placeholder="e.g. Big-O of nested loops, derivatives of trig functions, SQL GROUP BY">
+                </div>
+                <div>
+                    <label for="practiceDifficulty" class="block text-sm font-medium mb-1">Difficulty</label>
+                    <select id="practiceDifficulty" class="form-select w-full rounded-xl text-sm">
+                        <option value="easy">Easy</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="practiceCount" class="block text-sm font-medium mb-1">Questions</label>
+                    <select id="practiceCount" class="form-select w-full rounded-xl text-sm">
+                        <option value="5">5</option>
+                        <option value="7" selected>7</option>
+                        <option value="10">10</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <button type="submit" id="practiceGenerateBtn" class="btn-primary">Generate practice set</button>
+                </div>
+            </form>
+            <div id="practiceStatus" class="mt-4 text-sm"></div>
+        </section>
+
+        <section class="surface-card">
+            <div id="quizInterfaceContainer" class="hidden"></div>
+            <div id="quizResultsContainer" class="hidden mt-6"></div>
+            <div id="quizLoadingStatus" class="mt-4 text-center text-sm"></div>
+        </section>
+    </main>
+
+    <div id="authModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 data-[visible=true]:opacity-100 data-[visible=true]:pointer-events-auto" data-visible="false">
+        <div class="modal-content bg-white p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-md transform transition-all duration-300 scale-95 opacity-0 group-data-[visible=true]:scale-100 group-data-[visible=true]:opacity-100">
+            <div class="flex justify-between items-start mb-6">
+                <h3 id="modalTitle" class="text-xl font-semibold">Sign in</h3>
+                <button id="closeModalButton" class="text-3xl leading-none" aria-label="Close">&times;</button>
+            </div>
+            <form id="authForm" class="space-y-5">
+                <div>
+                    <label for="email" class="block text-sm font-medium mb-1">Email</label>
+                    <input type="email" id="email" name="email" required class="form-input w-full rounded-xl text-sm">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" id="password" name="password" required minlength="6" class="form-input w-full rounded-xl text-sm">
+                </div>
+                <button type="submit" id="authSubmitButton" class="btn-primary w-full">Sign in</button>
+                <div id="authFormMessage" class="text-sm"></div>
+                <p id="authFormToggle" class="text-sm text-center">Don't have an account? <a href="#" id="toggleToRegister">Create one</a></p>
+            </form>
+        </div>
+    </div>
+
+    <footer class="mt-auto border-t" style="border-color:var(--border)">
+        <div class="container mx-auto px-4 py-6 text-center text-sm" style="color:var(--muted)">
+            <p>&copy; <span id="currentYearPractice"></span> Smart Study.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="/js/theme.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/usage-meter.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/practice.js"></script>
+</body>
+</html>

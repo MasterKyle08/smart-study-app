@@ -2,25 +2,69 @@
 <html lang="en" class="antialiased">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Dashboard - Smart Study</title>
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Dashboard — Smart Study</title>
+    <script>(function(){try{var t=localStorage.getItem('ss-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans">
-    <header class="bg-white shadow-md sticky top-0 z-40">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center py-3 sm:py-4">
-            <h1 class="text-2xl sm:text-3xl font-bold text-indigo-600">Smart Study AI - Dashboard</h1>
-            <nav class="space-x-2 sm:space-x-3 mt-2 sm:mt-0">
-                <a href="index.html" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-indigo-600 hover:text-indigo-800 bg-indigo-100 hover:bg-indigo-200 rounded-lg transition duration-150">Home (New Upload)</a>
-                <button id="logoutButton" class="px-3 sm:px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 transition duration-150">Logout</button>
+<body class="min-h-screen flex flex-col">
+    <header class="site-header">
+        <div class="site-header-inner">
+            <a href="/" class="brand-link">
+                <span class="brand-mark">S</span>
+                <span class="brand-name">Smart Study</span>
+            </a>
+            <nav class="nav-desktop" aria-label="Primary">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/practice" class="nav-link">Practice</a>
+                <a href="/premade" class="nav-link">Quiz library</a>
+                <a href="/dashboard.html" class="nav-link nav-link-active">Dashboard</a>
+                <a href="/admin" class="nav-link nav-auth-admin hidden">Admin</a>
+                <select id="themeSelect" class="theme-select" aria-label="Color theme">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                <button id="logoutButton" class="btn-danger">Sign out</button>
             </nav>
+            <button id="mobileNavToggle" class="icon-btn" type="button" aria-expanded="false" aria-controls="mobileNavDrawer" aria-label="Open menu">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+        </div>
+        <div id="mobileNavDrawer" class="mobile-drawer hidden">
+            <a href="/" class="nav-link w-full justify-start">Home</a>
+            <a href="/practice" class="nav-link w-full justify-start">Practice</a>
+            <a href="/premade" class="nav-link w-full justify-start">Quiz library</a>
+            <a href="/dashboard.html" class="nav-link w-full justify-start nav-link-active">Dashboard</a>
+            <a href="/admin" class="nav-link w-full justify-start nav-auth-admin hidden">Admin</a>
+            <button class="btn-danger w-full" onclick="document.getElementById('logoutButton').click()">Sign out</button>
         </div>
     </header>
     <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
-        <h2 class="text-2xl sm:text-3xl font-semibold text-slate-800 mb-6 sm:mb-8">My Saved Study Sessions</h2>
+        <div class="mb-8">
+            <h2 class="text-2xl sm:text-3xl font-semibold text-slate-900">Your study sessions</h2>
+            <p class="text-sm text-slate-500 mt-1">Reopen summaries, flashcards, and quizzes from files you already processed.</p>
+        </div>
+        <section id="usageMeter" class="surface-card mb-6 text-sm"></section>
+        <section id="dueCardsCard" class="surface-card mb-6">
+            <h3 class="text-lg font-semibold mb-2">Due today</h3>
+            <p class="text-sm mb-3" style="color:var(--muted)">Flashcards scheduled by spaced repetition that are waiting for review.</p>
+            <div id="dueCardsList" class="text-sm">Loading…</div>
+        </section>
+        <section id="billingCard" class="surface-card mb-8">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                    <h3 class="text-lg font-semibold">Premium · $5 / month</h3>
+                    <p id="billingCopy" class="text-sm" style="color:var(--muted)">We are not marking up a free model. Free Gemma 4 is a shared Google free-tier pool. Premium pays for Gemini Flash-Lite so your studying does not take that pool from everyone else.</p>
+                    <ul id="pricingNotes" class="mt-3 text-sm space-y-1 list-disc pl-5" style="color:var(--muted)"></ul>
+                </div>
+                <button id="upgradeButton" type="button" class="btn-accent">Upgrade $5/mo</button>
+            </div>
+            <p id="billingStatus" class="text-sm mt-3"></p>
+        </section>
         <div id="sessionsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             <p id="loadingSessions" class="text-slate-600 col-span-full text-center py-5 text-sm">Loading...</p>
         </div>
@@ -64,9 +108,7 @@
                     </div>
                     <div id="modalQuizTab" class="tab-content hidden">
                         <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Quiz</h4>
-                        <div id="modalQuizOutput" class="output-box quiz-container space-y-4">
-                             {/* Static quiz content will be rendered here by JS if available, or a message */}
-                        </div>
+                        <div id="modalQuizOutput" class="output-box quiz-container space-y-4"></div>
                     </div>
                     <div id="modalOriginalTextTab" class="tab-content hidden">
                         <h4 class="text-lg sm:text-xl font-semibold text-slate-700 mb-3">Original Extracted Text</h4>
@@ -124,11 +166,16 @@
         </div>
 
     </main>
-    <footer class="bg-slate-800 text-slate-300 text-center py-6 mt-auto text-sm">
-        <div class="container mx-auto px-4"><p>&copy; <span id="currentYearDashboard"></span> Smart Study AI.</p></div>
+    <footer class="mt-auto border-t border-slate-200 bg-white/80">
+        <div class="container mx-auto px-4 py-6 text-center text-sm text-slate-500">
+            <p>&copy; <span id="currentYearDashboard"></span> Smart Study.</p>
+        </div>
     </footer>
-    <script src="js/api.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/dashboard_app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="/js/theme.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/usage-meter.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/dashboard_app.js"></script>
 </body>
 </html>

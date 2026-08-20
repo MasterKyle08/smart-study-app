@@ -38,14 +38,14 @@ class Session {
       }
       return { 
         id: Number(sessionId), 
-        userId, 
+        userId: userId == null ? null : Number(userId), 
         originalFilename, 
         originalContentType, 
         extractedText, 
         summary, 
         flashcards, 
         quiz,
-        created_at: new Date().toISOString(), // Timestamps handled by DB defaults, but good to return consistent shape
+        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
     } catch (error) {
@@ -65,7 +65,11 @@ class Session {
     const params = [id];
     try {
       const result = await db.execute({ sql, args: params });
-      return result.rows.length > 0 ? { ...result.rows[0] } : null;
+      if (result.rows.length === 0) return null;
+      const row = { ...result.rows[0] };
+      row.id = Number(row.id);
+      row.user_id = row.user_id == null ? null : Number(row.user_id);
+      return row;
     } catch (error) {
       console.error('Error finding session by ID in Turso DB:', error.message);
       throw error;
@@ -83,7 +87,12 @@ class Session {
     const params = [userId];
     try {
       const result = await db.execute({ sql, args: params });
-      return result.rows.map(row => ({ ...row })); // Ensure plain objects
+      return result.rows.map((row) => {
+        const session = { ...row };
+        session.id = Number(session.id);
+        session.user_id = session.user_id == null ? null : Number(session.user_id);
+        return session;
+      });
     } catch (error) {
       console.error('Error finding sessions by user ID in Turso DB:', error.message);
       throw error;
@@ -172,6 +181,21 @@ class Session {
       console.error('Error deleting session from Turso DB:', error.message);
       throw error;
     }
+  }
+
+  static async deleteByUserId(userId) {
+    const result = await db.execute({
+      sql: 'DELETE FROM Sessions WHERE user_id = ?',
+      args: [userId],
+    });
+    return result.rowsAffected || 0;
+  }
+
+  static async deleteAnonymousOlderThan(hours = 24) {
+    const windowHours = Math.max(1, parseInt(hours, 10) || 24);
+    const sql = `DELETE FROM Sessions WHERE user_id IS NULL AND created_at < datetime('now', ?)`;
+    const result = await db.execute({ sql, args: [`-${windowHours} hours`] });
+    return result.rowsAffected || 0;
   }
 }
 

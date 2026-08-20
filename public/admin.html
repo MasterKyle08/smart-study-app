@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Admin — Smart Study</title>
+    <script>(function(){try{var t=localStorage.getItem('ss-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="min-h-screen flex flex-col">
+    <header class="site-header">
+        <div class="site-header-inner">
+            <a href="/" class="brand-link">
+                <span class="brand-mark">S</span>
+                <span class="brand-name">Smart Study</span>
+            </a>
+            <nav class="nav-desktop" aria-label="Primary">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/dashboard.html" class="nav-link">Dashboard</a>
+                <a href="/admin" class="nav-link nav-link-active">Admin</a>
+                <select id="themeSelect" class="theme-select" aria-label="Color theme">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                <button id="lockAdminButton" class="btn-secondary hidden">Lock admin</button>
+                <button id="logoutNavButton" class="btn-danger">Sign out</button>
+            </nav>
+            <button id="mobileNavToggle" class="icon-btn" type="button" aria-expanded="false" aria-controls="mobileNavDrawer" aria-label="Open menu">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+        </div>
+        <div id="mobileNavDrawer" class="mobile-drawer hidden">
+            <a href="/" class="nav-link w-full justify-start">Home</a>
+            <a href="/dashboard.html" class="nav-link w-full justify-start">Dashboard</a>
+            <a href="/admin" class="nav-link w-full justify-start nav-link-active">Admin</a>
+            <button class="btn-secondary w-full" onclick="document.getElementById('lockAdminButton').click()">Lock admin</button>
+            <button class="btn-danger w-full" onclick="document.getElementById('logoutNavButton').click()">Sign out</button>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
+        <section id="adminGate" class="surface-card max-w-xl mx-auto">
+            <p class="hero-kicker">Staff only</p>
+            <h1 class="text-2xl font-semibold mb-2">Admin mode</h1>
+            <p id="gateCopy" class="text-sm mb-4" style="color:var(--muted)">Sign in, then enter a 2FA code each time you open this page.</p>
+            <div id="gateMessage" class="hidden"></div>
+            <div id="notSignedIn" class="hidden space-y-3">
+                <p class="text-sm">You need to sign in on the home page first, then come back here.</p>
+                <a href="/" class="btn-primary">Go sign in</a>
+            </div>
+            <div id="notAdmin" class="hidden">
+                <p class="text-sm">This account is not an admin.</p>
+            </div>
+            <div id="phoneEnroll" class="hidden space-y-3">
+                <p class="text-sm" style="color:var(--muted)">Admin accounts must verify a phone number. A code will be texted to you.</p>
+                <label class="block text-sm font-medium">Phone (E.164)</label>
+                <input id="phoneInput" class="form-input w-full rounded-xl" placeholder="+15551234567" autocomplete="tel">
+                <button id="sendPhoneCode" type="button" class="btn-primary">Text a code</button>
+                <input id="phoneCodeInput" class="form-input w-full rounded-xl hidden" placeholder="6-digit code" inputmode="numeric" maxlength="6">
+                <button id="confirmPhoneCode" type="button" class="btn-accent hidden">Verify phone</button>
+            </div>
+            <div id="unlockPanel" class="hidden space-y-3">
+                <p id="unlockHint" class="text-sm" style="color:var(--muted)"></p>
+                <button id="sendUnlockCode" type="button" class="btn-primary">Send 2FA code</button>
+                <input id="unlockCodeInput" class="form-input w-full rounded-xl hidden" placeholder="6-digit code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                <button id="confirmUnlockCode" type="button" class="btn-accent hidden">Enter admin mode</button>
+            </div>
+        </section>
+
+        <section id="adminApp" class="hidden">
+            <div class="mb-6">
+                <h1 class="text-2xl sm:text-3xl font-semibold">Admin</h1>
+                <p class="text-sm mt-1" style="color:var(--muted)">2FA is required every visit. Destructive actions also need your password. The audit log cannot be edited.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 mb-6" role="tablist">
+                <button class="tab-link" data-tab="usersTab" data-active="true">Users</button>
+                <button class="tab-link" data-tab="quizzesTab">Quizzes</button>
+                <button class="tab-link" data-tab="usageTab">Usage</button>
+                <button class="tab-link" data-tab="auditTab">Audit log</button>
+            </div>
+
+            <div id="usersTab" class="tab-content grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="surface-card">
+                    <div class="flex gap-2 mb-4">
+                        <input id="userSearch" class="form-input flex-1 rounded-xl" placeholder="Search email">
+                        <button id="userSearchBtn" type="button" class="btn-secondary">Search</button>
+                    </div>
+                    <div id="usersList" class="space-y-2 text-sm">Loading…</div>
+                </div>
+                <div class="surface-card">
+                    <div id="userDetail"><p class="text-sm" style="color:var(--muted)">Select a user.</p></div>
+                </div>
+            </div>
+
+            <div id="quizzesTab" class="tab-content hidden">
+                <div class="surface-card">
+                    <div class="flex gap-2 mb-4">
+                        <input id="quizSearch" class="form-input flex-1 rounded-xl" placeholder="Search title, topic, or slug">
+                        <button id="quizSearchBtn" type="button" class="btn-secondary">Search</button>
+                    </div>
+                    <div id="quizList" class="space-y-2 text-sm">Loading…</div>
+                </div>
+            </div>
+
+            <div id="usageTab" class="tab-content hidden">
+                <div id="usagePanel" class="surface-card text-sm">Loading…</div>
+            </div>
+
+            <div id="auditTab" class="tab-content hidden">
+                <div id="auditPanel" class="surface-card text-sm">Loading…</div>
+            </div>
+        </section>
+    </main>
+
+    <div id="confirmModal" class="group fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black bg-opacity-75 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity" data-visible="false">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-2xl w-full max-w-md" style="background:var(--surface); color:var(--text);">
+            <h3 id="confirmTitle" class="text-lg font-semibold mb-2">Confirm</h3>
+            <p id="confirmCopy" class="text-sm mb-4" style="color:var(--muted)"></p>
+            <label class="block text-sm font-medium mb-1">Your password</label>
+            <input id="confirmPassword" type="password" class="form-input w-full rounded-xl mb-3" autocomplete="current-password">
+            <div id="confirmPhraseWrap" class="mb-3">
+                <label id="confirmPhraseLabel" class="block text-sm font-medium mb-1">Type to confirm</label>
+                <input id="confirmPhrase" class="form-input w-full rounded-xl" autocomplete="off">
+            </div>
+            <div id="confirmExtraWrap" class="mb-3 hidden">
+                <label id="confirmExtraLabel" class="block text-sm font-medium mb-1"></label>
+                <input id="confirmExtra" class="form-input w-full rounded-xl">
+            </div>
+            <div id="confirmError" class="hidden text-sm text-red-600 mb-3"></div>
+            <div class="flex gap-2 justify-end">
+                <button id="confirmCancel" type="button" class="btn-secondary">Cancel</button>
+                <button id="confirmSubmit" type="button" class="btn-danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/theme.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/admin.js"></script>
+</body>
+</html>

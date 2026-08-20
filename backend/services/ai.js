@@ -1,409 +1,698 @@
 /**
  * @file backend/services/ai.js
- * @description Service layer for interacting with Google AI (Gemini).
- * Handles generation of summaries, flashcards, quizzes, and interactive feedback.
+ * @description Google AI service for summaries, flashcards, quizzes, and study feedback.
+ * Free tier uses Gemma 4 with thinking disabled and robust JSON parsing.
+ * Premium uses a Gemini Flash-Lite model with native structured output.
  */
 
-const fetch = require('node-fetch'); 
+const fetch = require('node-fetch');
+const {
+  recoverJson,
+  normalizeFlashcards,
+  normalizeQuestionType,
+  normalizeQuizQuestions,
+  scoreLocally,
+} = require('../utils/studyContent');
+const usage = require('./usage');
+const { parseGoogleUsageMetadata, estimateTokens } = require('../utils/usageMath');
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-const AI_MODEL_NAME = process.env.GOOGLE_AI_MODEL_NAME || 'gemini-1.5-flash-latest'; 
+const FREE_API_KEY = (process.env.GOOGLE_FREE_API_KEY || process.env.GOOGLE_API_KEY || '').replace(/['"]/g, '');
+const PREMIUM_API_KEY = (process.env.GOOGLE_PREMIUM_API_KEY || '').replace(/['"]/g, '');
+const GOOGLE_API_KEY = FREE_API_KEY;
+const FREE_MODEL = (process.env.GOOGLE_AI_MODEL_NAME || 'gemma-4-31b-it').replace(/['"]/g, '');
+const PREMIUM_MODEL = (process.env.GOOGLE_PREMIUM_MODEL_NAME || 'gemini-3.5-flash-lite').replace(/['"]/g, '');
 const GOOGLE_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
+const FREE_MAX_SOURCE_CHARS = 14000;
+const PREMIUM_MAX_SOURCE_CHARS = 40000;
+const FREE_MAX_QUIZ_QUESTIONS = 10;
+const PREMIUM_MAX_QUIZ_QUESTIONS = 15;
+const REQUEST_TIMEOUT_MS = 90000;
+
 if (!GOOGLE_API_KEY) {
-  console.warn(
-    "Warning: GOOGLE_API_KEY is not defined in your .env file. " +
-    "AI features using Google models will not work."
-  );
+  console.warn('Warning: GOOGLE_API_KEY is not defined. AI features will not work.');
 }
 
-async function callGoogleAI(contents, generationConfig = {}, modelName = AI_MODEL_NAME) {
-  if (!GOOGLE_API_KEY) {
-    const error = new Error('Google API key is not configured. Please set GOOGLE_API_KEY in your .env file.');
+function isPremiumRequest(options = {}) {
+  return Boolean(options.premium);
+}
+
+function modelFor(options = {}) {
+  return isPremiumRequest(options) ? PREMIUM_MODEL : FREE_MODEL;
+}
+
+function apiKeyFor(options = {}) {
+  if (isPremiumRequest(options)) {
+    if (!PREMIUM_API_KEY) {
+      const error = new Error('Premium is missing GOOGLE_PREMIUM_API_KEY. Use a separate Google AI Studio project for the paid model.');
+      error.statusCode = 501;
+      throw error;
+    }
+    return PREMIUM_API_KEY;
+  }
+  if (!FREE_API_KEY) {
+    const error = new Error('Google free API key is not configured. Set GOOGLE_FREE_API_KEY or GOOGLE_API_KEY.');
     error.statusCode = 500;
     throw error;
   }
-  const apiUrl = `${GOOGLE_API_URL_BASE}${modelName}:generateContent?key=${GOOGLE_API_KEY}`;
-  
+  return FREE_API_KEY;
+}
+
+function tokensFromGoogleResponse(data, contents) {
+  return parseGoogleUsageMetadata(data && (data.usageMetadata || data.usage_metadata), {
+    inputTokens: estimateTokens(JSON.stringify(contents || [])),
+    outputTokens: estimateTokens(extractCandidateText(data)),
+  });
+}
+
+function maxSourceChars(options = {}) {
+  return isPremiumRequest(options) ? PREMIUM_MAX_SOURCE_CHARS : FREE_MAX_SOURCE_CHARS;
+}
+
+function truncateSource(text, options = {}) {
+  const limit = maxSourceChars(options);
+  const raw = String(text || '').trim();
+  if (raw.length <= limit) return raw;
+  const sliced = raw.slice(0, limit);
+  const lastBreak = Math.max(sliced.lastIndexOf('\n'), sliced.lastIndexOf('. '), sliced.lastIndexOf('? '), sliced.lastIndexOf('! '));
+  const cut = lastBreak > limit * 0.7 ? sliced.slice(0, lastBreak + 1) : sliced;
+  return `${cut.trim()}\n\n[Source truncated to the most relevant opening section for generation.]`;
+}
+
+function capQuestionCount(numQuestions, options = {}) {
+  const max = isPremiumRequest(options) ? PREMIUM_MAX_QUIZ_QUESTIONS : FREE_MAX_QUIZ_QUESTIONS;
+  if (numQuestions === 'ai_choice' || numQuestions == null) {
+    return isPremiumRequest(options) ? 10 : 7;
+  }
+  const parsed = parseInt(numQuestions, 10);
+  if (Number.isNaN(parsed) || parsed < 1) return isPremiumRequest(options) ? 10 : 7;
+  return Math.min(parsed, max);
+}
+
+function extractCandidateText(data) {
+  const candidate = data && data.candidates && data.candidates[0];
+  if (!candidate) return '';
+  const parts = (candidate.content && candidate.content.parts) || [];
+  return parts
+    .map((part) => (typeof part.text === 'string' ? part.text : ''))
+    .join('')
+    .trim();
+}
+
+async function noteUsage(data, contents, premium, modelName) {
+  try {
+    const counts = tokensFromGoogleResponse(data, contents);
+    const usedPremium = Boolean(premium) || (modelName && !String(modelName).toLowerCase().includes('gemma'));
+    await usage.recordRequest({
+      premium: usedPremium,
+      inputTokens: counts.inputTokens,
+      outputTokens: counts.outputTokens,
+      source: counts.source,
+    });
+  } catch (_err) {
+    // usage tracking must never break generation
+  }
+}
+
+async function callGoogleAI(contents, generationConfig = {}, { modelName, json = false, timeoutMs = REQUEST_TIMEOUT_MS, premium = false } = {}) {
+  const apiKey = apiKeyFor({ premium });
+  const apiUrl = `${GOOGLE_API_URL_BASE}${modelName}:generateContent?key=${apiKey}`;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
   const payload = {
-    contents: contents,
+    contents,
     generationConfig: {
-      temperature: 0.6, 
-      topP: 0.95,
-      maxOutputTokens: 2048, 
-      ...generationConfig 
-    }
+      temperature: 0.4,
+      topP: 0.9,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingLevel: 'minimal' },
+      ...generationConfig,
+    },
   };
 
-  // Remove schema/mimeType if they are not actually supported or if we are not using them for this call
-  // This is particularly important if the model being called doesn't support JSON mode.
-  if (payload.generationConfig.responseMimeType === "application/json" && (modelName.includes("gemma"))) {
-    console.warn(`Attempting to use JSON mode with Gemma model (${modelName}). Removing JSON mode params as it might not be supported.`);
-    delete payload.generationConfig.responseMimeType;
-    delete payload.generationConfig.responseSchema;
-  } else if (payload.generationConfig.responseMimeType === undefined || payload.generationConfig.responseMimeType === null) {
-    delete payload.generationConfig.responseMimeType;
+  if (json && payload.generationConfig.responseMimeType !== 'application/json') {
+    payload.generationConfig.responseMimeType = 'application/json';
   }
-  if (payload.generationConfig.responseSchema === undefined || payload.generationConfig.responseSchema === null) {
-    delete payload.generationConfig.responseSchema;
-  }
-
 
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined,
     });
 
-    const data = await response.json();
-
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error("Google AI API Error Response:", JSON.stringify(data, null, 2));
       const errorMessage = data.error?.message || `Google AI API request failed with status ${response.status}`;
       const error = new Error(errorMessage);
-      error.statusCode = response.status;
-      error.details = data.error; 
-      error.isGoogleAIError = true; // Custom flag
+      error.statusCode = response.status >= 500 ? 502 : response.status;
       throw error;
     }
 
-    // Adjusted validation: Expect parts[0] to exist, but text might be in a different part or part of a function call for JSON mode.
-    // If responseMimeType was application/json, the text would be the JSON string.
-    // If not, it's plain text.
-    if (!data.candidates || data.candidates.length === 0 || 
-        !data.candidates[0].content || !data.candidates[0].content.parts || 
-        data.candidates[0].content.parts.length === 0) {
-          if (data.candidates && data.candidates[0] && data.candidates[0].finishReason) {
-            const reason = data.candidates[0].finishReason;
-            if (reason === 'SAFETY') {
-              throw new Error('Content generation blocked by safety policies. Please revise your input or try a different query.');
-            } else if (reason === 'MAX_TOKENS') {
-               console.warn("Google AI response was truncated due to max tokens limit.");
-               // If text is still undefined here, it's an issue
-               if (data.candidates[0].content.parts[0].text === undefined && !payload.generationConfig.responseMimeType?.includes("json")) {
-                 throw new Error('Content generation truncated and no text content returned.');
-               }
-            } else if (reason !== 'STOP') { 
-              throw new Error(`Content generation stopped unexpectedly. Reason: ${reason}.`);
-            }
-          } else {
-            // General invalid structure if no specific finishReason explains it
-            throw new Error('Invalid response structure from Google AI API. Missing expected content parts.');
-          }
-    }
-    // If expecting text and text is not there (and not due to MAX_TOKENS with some content)
-    if (data.candidates[0].content.parts[0].text === undefined && 
-        !payload.generationConfig.responseMimeType?.includes("json") && 
-        data.candidates[0].finishReason !== 'MAX_TOKENS') {
-       throw new Error('Invalid response structure: Missing text in response parts for non-JSON mode.');
+    if (!data.candidates || data.candidates.length === 0) {
+      const block = data.promptFeedback && data.promptFeedback.blockReason;
+      const error = new Error(block ? `AI blocked the request (${block}).` : 'The AI returned an empty response.');
+      error.statusCode = 502;
+      throw error;
     }
 
-    return data; 
+    const text = extractCandidateText(data);
+    await noteUsage(data, contents, premium, modelName);
+    return { data, text, finishReason: data.candidates[0].finishReason || '' };
   } catch (error) {
-    if (!error.statusCode) error.statusCode = 500;
-    if (!error.isGoogleAIError) { // Don't re-log if already logged as Google AI error
-        console.error("Error in callGoogleAI:", error.message, error.details || '');
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error('The AI took too long to respond. Try a shorter document or fewer questions.');
+      timeoutError.statusCode = 504;
+      throw timeoutError;
     }
-    throw error; 
+    console.error('Error in callGoogleAI:', error.message);
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
-function extractJsonFromString(text) {
-    if (!text || typeof text !== 'string') return null;
-    const markdownJsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (markdownJsonMatch && markdownJsonMatch[1]) {
-        try { JSON.parse(markdownJsonMatch[1].trim()); return markdownJsonMatch[1].trim(); } catch (e) { /* Ignore */ }
-    }
-    const trimmedText = text.trim();
-    let startIndex = -1; let firstChar = '';
-    for (let i = 0; i < trimmedText.length; i++) { if (trimmedText[i] === '{' || trimmedText[i] === '[') { startIndex = i; firstChar = trimmedText[i]; break; } }
-    if (startIndex === -1) return null; 
-    const expectedCloser = firstChar === '{' ? '}' : ']';
-    let openBrackets = 0;
-    for (let i = startIndex; i < trimmedText.length; i++) {
-        if (trimmedText[i] === firstChar) openBrackets++;
-        if (trimmedText[i] === expectedCloser) openBrackets--;
-        if (openBrackets === 0) {
-            const potentialJson = trimmedText.substring(startIndex, i + 1);
-            try { JSON.parse(potentialJson); return potentialJson; } catch (e) { /* Continue */ }
-        }
-    }
-    if ((trimmedText.startsWith('{') && trimmedText.endsWith('}')) || (trimmedText.startsWith('[') && trimmedText.endsWith(']'))) {
-        try { JSON.parse(trimmedText); return trimmedText; } catch (e) { /* ignore */ }
-    }
-    console.warn("Failed to extract valid JSON from string:", text.substring(0, 200) + "...");
-    return null;
-}
+async function generateJson(contents, { schema, modelName, temperature = 0.35, maxOutputTokens = 4096, systemInstruction, premium = false } = {}) {
+  const apiKey = apiKeyFor({ premium });
+  const generationConfig = {
+    temperature,
+    maxOutputTokens,
+    thinkingConfig: { thinkingLevel: 'minimal' },
+    responseMimeType: 'application/json',
+  };
+  if (schema) generationConfig.responseSchema = schema;
 
-async function generateSummary( text, lengthPreference = 'medium', stylePreference = 'paragraph', keywords = [], audiencePurpose = '', negativeKeywords = []) {
-  let lengthInstruction = "The summary should be concise and around 150-250 words.";
-  if (lengthPreference === 'short') lengthInstruction = "The summary should be very brief, around 50-100 words.";
-  else if (lengthPreference === 'long') lengthInstruction = "The summary should be detailed, around 300-400 words.";
-  let styleInstruction = (stylePreference === 'paragraph') 
-    ? "Present the summary as well-structured paragraphs." 
-    : `Present the summary primarily as ${lengthPreference === 'short' ? '3-5' : (lengthPreference === 'long' ? 'a detailed list of 7-10' : '5-7')} key bullet points. Each bullet point MUST start with '*' or '-' followed by a space.`;
-  let keywordInstruction = keywords && keywords.length > 0 ? `Pay special attention to these keywords: ${keywords.join(', ')}.` : "";
-  let audienceInstruction = audiencePurpose ? `Tailor this summary for: ${audiencePurpose}.` : "";
-  let negativeKeywordInstruction = negativeKeywords && negativeKeywords.length > 0 ? `Avoid discussing: ${negativeKeywords.join(', ')}.` : "";
-  let sectionInstruction = (stylePreference === 'paragraph' && lengthPreference === 'long') || (stylePreference === 'bullets' && lengthPreference === 'long') 
-    ? "If the content is extensive, structure the summary with clear subheadings (e.g., '### Subheading Title' markdown) where appropriate for readability. For bullets, ALL content, including under subheadings, MUST be bullet points." : "";
-  const prompt = `You are an expert academic summarizer. 
-Focus on key concepts and main ideas.
-${lengthInstruction}
-${styleInstruction}
-${keywordInstruction}
-${audienceInstruction}
-${negativeKeywordInstruction}
-${sectionInstruction} 
-Do not add any conversational filler before or after the summary content itself.
-Text to summarize:
-${text}`;
-  const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  const generationConfigForSummary = { temperature: 0.7 }; // No maxOutputTokens here, relies on callGoogleAI default
-  const data = await callGoogleAI(contents, generationConfigForSummary); 
-  return data.candidates[0].content.parts[0].text.trim();
-}
+  const bodyContents = contents;
 
-async function generateFlashcards(text) {
-  const prompt = `You are an AI assistant. Based on the provided text, generate 10-15 flashcards.
-Each flashcard must have a 'term' (a concise key concept or question) and a 'definition' (a clear explanation or answer).
-Respond ONLY with a valid JSON array of objects in the format: [{"term": "Term 1", "definition": "Definition 1"}, ...].
-Do NOT include any text, comments, or markdown formatting before or after the JSON array.
-Text:
-${text}`;
-  const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  // For tasks expecting JSON, we will not specify responseMimeType if model doesn't support it.
-  // We will rely on prompt engineering and extractJsonFromString.
-  const data = await callGoogleAI(contents, { maxOutputTokens: 1500 }); 
+  const request = {
+    contents: bodyContents,
+    generationConfig,
+  };
+  if (systemInstruction) {
+    request.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  const apiUrl = `${GOOGLE_API_URL_BASE}${modelName}:generateContent?key=${apiKey}`;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
+
   try {
-    const rawTextOutput = data.candidates[0].content.parts[0].text;
-    const jsonString = extractJsonFromString(rawTextOutput);
-    if (!jsonString) throw new Error("AI response for flashcards was not valid JSON or was missing.");
-    const flashcardsArray = JSON.parse(jsonString);
-    if (!Array.isArray(flashcardsArray) || !flashcardsArray.every(fc => fc && typeof fc.term === 'string' && fc.term.trim() !== '' && typeof fc.definition === 'string' && fc.definition.trim() !== '')) {
-        throw new Error("Flashcards JSON is not an array of {term, definition} objects with non-empty strings.");
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: controller ? controller.signal : undefined,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.error?.message || `Google AI API request failed with status ${response.status}`);
+      error.statusCode = response.status >= 500 ? 502 : response.status;
+      throw error;
     }
-    return flashcardsArray;
-  } catch (e) { throw new Error(`Failed to parse flashcards from AI: ${e.message}. Raw output: ${data.candidates[0].content.parts[0].text.substring(0,100)}`); }
+    const text = extractCandidateText(data);
+    await noteUsage(data, contents, premium, modelName);
+    const parsed = recoverJson(text);
+    if (parsed == null) {
+      const error = new Error('The AI returned content that could not be parsed as JSON.');
+      error.statusCode = 502;
+      error.rawText = text;
+      throw error;
+    }
+    return parsed;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error('The AI took too long to respond. Try a shorter document or fewer questions.');
+      timeoutError.statusCode = 504;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
-async function generateQuizWithOptions(text, options) {
-  const { questionTypes, numQuestions, difficulty } = options;
-  let numQuestionsPrompt = (numQuestions && numQuestions !== 'ai_choice') ? `${numQuestions} questions` : "around 7-10 questions";
-  let questionTypesPrompt = questionTypes && questionTypes.length > 0 
-    ? questionTypes.map(type => ({ "multiple_choice": "multiple_choice (single correct answer, 3-4 options)", "select_all": "select_all_that_apply (multiple correct answers from 3-5 options)", "short_answer": "short_answer (brief typed response)" }[type] || type)).join(', and ')
-    : "multiple_choice (single correct answer)";
-  const difficultyPrompt = difficulty ? `The difficulty level should be ${difficulty}.` : "medium difficulty.";
-  const prompt = `Create a quiz with ${numQuestionsPrompt} of type(s): ${questionTypesPrompt}. Difficulty: ${difficultyPrompt}.
-For each question, provide: "id" (unique string), "questionText" (string), "questionType" ("multiple_choice", "select_all", "short_answer"), "options" (array of strings; empty for short_answer if no hints), "correctAnswer" (string for MC, array of strings for SA, string for short_answer), "briefExplanation" (1-2 sentences).
-Respond ONLY with a valid JSON array of these question objects. No extra text or markdown.
-Text:
-${text}`;
-  const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  const data = await callGoogleAI(contents, { maxOutputTokens: 3500 });
+async function generateJsonWithFallback(prompt, schema, options = {}) {
+  const modelName = modelFor(options);
+  const systemInstruction = 'Return only valid JSON. Do not include markdown fences, commentary, or trailing text.';
+  const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+
   try {
-    const rawTextOutput = data.candidates[0].content.parts[0].text;
-    const jsonString = extractJsonFromString(rawTextOutput);
-    if (!jsonString) throw new Error("AI response for quiz was not valid JSON or was missing.");
-    const quizArray = JSON.parse(jsonString);
-    if (!Array.isArray(quizArray) || !quizArray.every(q => q.id && q.questionText && q.questionType && Array.isArray(q.options) && q.correctAnswer && q.briefExplanation)) {
-        throw new Error("Quiz JSON is not in the expected format or is missing required fields.");
+    return await generateJson(contents, {
+      schema,
+      modelName,
+      temperature: options.temperature || 0.35,
+      maxOutputTokens: options.maxOutputTokens || 6144,
+      systemInstruction,
+      premium: options.premium,
+    });
+  } catch (firstError) {
+    console.warn('Structured JSON generation failed, retrying with prompt-only JSON:', firstError.message);
+    const retryPrompt = `${prompt}\n\nIMPORTANT: Reply with JSON only. No markdown. No extra keys.`;
+    const { text } = await callGoogleAI(
+      [{ role: 'user', parts: [{ text: retryPrompt }] }],
+      {
+        temperature: 0.2,
+        maxOutputTokens: options.maxOutputTokens || 6144,
+        thinkingConfig: { thinkingLevel: 'minimal' },
+      },
+      { modelName, premium: options.premium }
+    );
+    const parsed = recoverJson(text);
+    if (parsed == null) {
+      const error = new Error(firstError.message || 'Failed to parse AI JSON.');
+      error.statusCode = 502;
+      throw error;
     }
-    return quizArray;
-  } catch (e) { throw new Error(`Failed to parse quiz from AI: ${e.message}. Raw output: ${data.candidates[0].content.parts[0].text.substring(0,100)}`); }
+    return parsed;
+  }
 }
 
-async function explainTextSnippet(snippet) {
-  if (!snippet || snippet.trim() === "") throw new Error("Snippet to explain cannot be empty.");
-  const prompt = `Explain the following concept concisely for a student: "${snippet}". Provide the explanation directly.`;
-  const contents = [{ role: "user", parts: [{ text: prompt }] }];
-  const data = await callGoogleAI(contents, { maxOutputTokens: 300, temperature: 0.5 });
-  return data.candidates[0].content.parts[0].text.trim();
+const FLASHCARD_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      term: { type: 'STRING', description: 'Front of the card: a concise term, name, or question' },
+      definition: { type: 'STRING', description: 'Back of the card: a clear student-friendly definition or answer' },
+    },
+    required: ['term', 'definition'],
+  },
+};
+
+const QUIZ_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      id: { type: 'STRING' },
+      questionText: { type: 'STRING' },
+      questionType: { type: 'STRING', description: 'multiple_choice, select_all, short_answer, numeric, coding_trace, or worked_problem' },
+      options: { type: 'ARRAY', items: { type: 'STRING' } },
+      correctAnswer: { type: 'STRING', description: 'Exact matching option, pipe-separated options, numeric value, or short result' },
+      briefExplanation: { type: 'STRING' },
+      codeSnippet: { type: 'STRING' },
+      language: { type: 'STRING' },
+      numericTolerance: { type: 'STRING' },
+    },
+    required: ['id', 'questionText', 'questionType', 'options', 'correctAnswer', 'briefExplanation'],
+  },
+};
+
+const SINGLE_QUESTION_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    id: { type: 'STRING' },
+    questionText: { type: 'STRING' },
+    questionType: { type: 'STRING' },
+    options: { type: 'ARRAY', items: { type: 'STRING' } },
+    correctAnswer: { type: 'STRING' },
+    briefExplanation: { type: 'STRING' },
+  },
+  required: ['id', 'questionText', 'questionType', 'options', 'correctAnswer', 'briefExplanation'],
+};
+
+const FEEDBACK_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    correctness: { type: 'STRING', description: 'correct, incorrect, or partial' },
+    feedback: { type: 'STRING' },
+  },
+  required: ['correctness', 'feedback'],
+};
+
+async function generateSummary(text, lengthPreference = 'medium', stylePreference = 'paragraph', keywords = [], audiencePurpose = '', negativeKeywords = [], options = {}) {
+  const source = truncateSource(text, options);
+  const lengthInstruction = lengthPreference === 'short'
+    ? 'about 60-90 words'
+    : lengthPreference === 'long'
+      ? 'about 250-350 words'
+      : 'about 140-200 words';
+  const styleInstruction = stylePreference === 'bullets'
+    ? 'Use short bullet points grouped under clear headings. Each bullet should be a complete idea.'
+    : 'Write 2-4 clear paragraphs with topic sentences. Use short sentences.';
+
+  const prompt = `You are a careful academic tutor. Summarize the source for a student.
+
+Length: ${lengthInstruction}
+Style: ${styleInstruction}
+${keywords.length ? `Emphasize these ideas if they appear: ${keywords.join(', ')}` : ''}
+${audiencePurpose ? `Audience/purpose: ${audiencePurpose}` : ''}
+${negativeKeywords.length ? `Do not dwell on: ${negativeKeywords.join(', ')}` : ''}
+
+Rules:
+- Use only facts from the source. Do not invent details.
+- Prefer key definitions, processes, and relationships over trivia.
+- If the source is messy OCR text, ignore obvious scanning garbage.
+
+Source:
+${source}`;
+
+  const { text: summary } = await callGoogleAI(
+    [{ role: 'user', parts: [{ text: prompt }] }],
+    { temperature: 0.45, maxOutputTokens: 1600, thinkingConfig: { thinkingLevel: 'minimal' } },
+    { modelName: modelFor(options), premium: options.premium }
+  );
+  if (!summary) {
+    const error = new Error('The AI did not return a summary.');
+    error.statusCode = 502;
+    throw error;
+  }
+  return summary;
 }
 
-async function getFlashcardInteractionResponse(card, interactionType, userAnswer, userQuery, chatHistory = []) {
-    let prompt = "";
-    let localMaxTokens = 200; // Renamed from maxTokens to avoid confusion with the parameter name
-    let generationConfig = { temperature: 0.5 }; 
-    const { term, definition } = card;
+async function generateFlashcards(text, options = {}) {
+  const source = truncateSource(text, options);
+  const count = isPremiumRequest(options) ? '12-16' : '8-12';
+  const prompt = `Create ${count} study flashcards from the source.
 
-    if (interactionType === "submit_answer") {
-        if (!userAnswer || userAnswer.trim() === "") {
-            return { feedback: "It looks like you didn't provide an answer. The correct definition is shown. Try again or ask for help!", correctness: "incorrect" };
-        }
-        prompt = `Flashcard Term: "${term}"
-Correct Definition: "${definition}"
-User's Answer: "${userAnswer}"
-Analyze the user's answer. 
-1. Determine correctness: Is it "correct", "incorrect", or "partial"?
-2. Provide concise feedback (max 50 words): If incorrect/partial, explain the key missing points or misunderstandings. If correct, briefly affirm.
-Respond ONLY with a JSON object with two keys: "correctness" (string: "correct", "incorrect", or "partial") and "feedback" (string). Example: {"correctness": "partial", "feedback": "You're on the right track, but missed mentioning X."}
-No other text or markdown.`;
-        // Do not set responseMimeType for Gemma if it's not supported. Rely on extractJsonFromString.
-        localMaxTokens = 250;
-    } else if (interactionType === "request_explanation") {
-        prompt = `Flashcard Term: "${term}"
-Definition: "${definition}"
-User requests a more detailed explanation of this flashcard. 
-Provide a clear, slightly more in-depth explanation (max 100 words).
-Explanation:`;
-        localMaxTokens = 200;
-    } else if (interactionType === "chat_message") {
-        if (!userQuery || userQuery.trim() === "") {
-            return { chatResponse: "What would you like to discuss about this flashcard?", updatedChatHistory: chatHistory };
-        }
-        let historyString = "Previous conversation (if any):\n";
-        chatHistory.forEach(msg => { historyString += `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.parts[0].text}\n`; });
-        prompt = `You are an AI tutor discussing a flashcard.
-Flashcard Term: "${term}"
-Definition: "${definition}"
-${chatHistory.length > 0 ? historyString : ''}
-User's new message: "${userQuery}"
-Respond helpfully and concisely (max 75 words), staying on the topic of the flashcard.
-AI Response:`;
-        localMaxTokens = 150;
-    } else {
-        throw new Error("Invalid flashcard interaction type.");
-    }
+Each card must have:
+- term: a short concept, vocabulary word, or question
+- definition: a clear 1-3 sentence answer a student can memorize
 
-    const contents = [{ role: "user", parts: [{ text: prompt }] }];
-    // Pass localMaxTokens as maxOutputTokens in the generationConfig for this call
-    const data = await callGoogleAI(contents, { ...generationConfig, maxOutputTokens: localMaxTokens }); 
-    const aiTextResponse = data.candidates[0].content.parts[0].text.trim();
+Rules:
+- Cover the most testable ideas, not trivia
+- Do not duplicate cards
+- Use only information in the source
+- Definitions should stand alone without referring to "the text"
 
-    if (interactionType === "submit_answer") {
-        try {
-            const jsonString = extractJsonFromString(aiTextResponse);
-            if (!jsonString) { 
-                console.warn("AI response for flashcard feedback was not valid JSON, attempting fallback analysis.", aiTextResponse);
-                let correctness = "partial"; 
-                if (aiTextResponse.toLowerCase().includes("correct")) correctness = "correct";
-                else if (aiTextResponse.toLowerCase().includes("incorrect") || aiTextResponse.toLowerCase().includes("not quite right")) correctness = "incorrect";
-                return { feedback: aiTextResponse, correctness };
-            }
-            const jsonResponse = JSON.parse(jsonString);
-            if (typeof jsonResponse.correctness !== 'string' || typeof jsonResponse.feedback !== 'string') {
-                 console.warn("Parsed JSON for flashcard feedback has incorrect structure.", jsonResponse);
-                let correctness = "partial";
-                if (jsonResponse.feedback && jsonResponse.feedback.toLowerCase().includes("correct")) correctness = "correct";
-                else if (jsonResponse.feedback && (jsonResponse.feedback.toLowerCase().includes("incorrect") || jsonResponse.feedback.toLowerCase().includes("not quite"))) correctness = "incorrect";
-                return { feedback: jsonResponse.feedback || aiTextResponse, correctness };
-            }
-            return jsonResponse;
-        } catch (e) {
-            console.error("Error parsing flashcard feedback JSON from AI:", e, "Raw response:", aiTextResponse);
-            let correctness = "partial"; 
-             if (aiTextResponse.toLowerCase().includes("correct")) correctness = "correct";
-             else if (aiTextResponse.toLowerCase().includes("incorrect")) correctness = "incorrect";
-            return { feedback: `AI provided feedback: "${aiTextResponse}" (Could not fully determine correctness structure).`, correctness };
-        }
-    } else if (interactionType === "request_explanation") {
-        return { explanation: aiTextResponse };
-    } else if (interactionType === "chat_message") {
-        const newChatHistory = [...chatHistory, { role: "user", parts: [{ text: userQuery }] }, { role: "model", parts: [{ text: aiTextResponse }] }];
-        return { chatResponse: aiTextResponse, updatedChatHistory: newChatHistory };
-    }
-    return {};
+Source:
+${source}`;
+
+  const parsed = await generateJsonWithFallback(prompt, FLASHCARD_SCHEMA, {
+    ...options,
+    maxOutputTokens: isPremiumRequest(options) ? 6144 : 4096,
+  });
+  const flashcards = normalizeFlashcards(parsed);
+  if (!flashcards.length) {
+    const error = new Error('The AI did not return usable flashcards. Try a clearer document.');
+    error.statusCode = 502;
+    throw error;
+  }
+  return flashcards;
 }
 
-async function getQuizAnswerFeedback(question, userAnswer) {
-    const userAnswerString = Array.isArray(userAnswer) ? userAnswer.join('; ') : userAnswer;
-    const correctAnswerString = Array.isArray(question.correctAnswer) ? question.correctAnswer.join('; ') : question.correctAnswer;
-    const prompt = `Quiz Question: "${question.questionText}"
-Question Type: ${question.questionType}
-Options (if any): ${question.options.join('; ')}
-Correct Answer(s): "${correctAnswerString}"
-Brief Explanation for Correct Answer: "${question.briefExplanation}"
-User's Answer: "${userAnswerString}"
-Analyze the user's answer.
-1. Determine correctness: Is it "correct", "incorrect", or "partial" (for 'select_all' or sometimes 'short_answer')?
-2. Provide concise feedback (max 60 words) based on correctness, referencing the key concepts or why it's wrong/partially right.
-Respond ONLY with a JSON object with two keys: "correctness" (string: "correct", "incorrect", or "partial") and "feedback" (string). Example: {"correctness": "correct", "feedback": "That's right!"}
-No other text or markdown.`;
-    const contents = [{ role: "user", parts: [{ text: prompt }] }];
-    // Do not set responseMimeType for Gemma if it's not supported. Rely on extractJsonFromString.
-    const generationConfig = { maxOutputTokens: 200, temperature: 0.4 };
+function describeQuestionTypes(questionTypes) {
+  return questionTypes.map((type) => {
+    const normalized = normalizeQuestionType(type);
+    if (normalized === 'select_all') {
+      return 'select_all: several options can be correct; put every correct option in correctAnswer separated by |';
+    }
+    if (normalized === 'short_answer') {
+      return 'short_answer: no options array; correctAnswer is a concise model answer';
+    }
+    return 'multiple_choice: exactly 4 options; correctAnswer must match one option exactly';
+  }).join('; ');
+}
+
+async function generateQuizWithOptions(text, quizOptions = {}, requestOptions = {}) {
+  const source = truncateSource(text, requestOptions);
+  const questionTypes = (quizOptions.questionTypes && quizOptions.questionTypes.length)
+    ? quizOptions.questionTypes.map(normalizeQuestionType)
+    : ['multiple_choice'];
+  const count = capQuestionCount(quizOptions.numQuestions, requestOptions);
+  const difficulty = ['easy', 'medium', 'hard'].includes(String(quizOptions.difficulty))
+    ? quizOptions.difficulty
+    : 'medium';
+  const primaryType = questionTypes[0] || 'multiple_choice';
+
+  const prompt = `Create exactly ${count} quiz questions from the source for a student.
+
+Difficulty: ${difficulty}
+Allowed types: ${describeQuestionTypes(questionTypes)}
+
+JSON fields for every question:
+- id: q1, q2, ...
+- questionText
+- questionType: one of ${questionTypes.join(', ')}
+- options: array of strings (empty for short_answer)
+- correctAnswer: exact option text, or option1|option2 for select_all
+- briefExplanation: one or two sentences from the source
+
+Rules:
+- Mix the allowed types if more than one is listed
+- Questions must be answerable from the source only
+- Wrong options should be plausible
+- Never leave JSON unfinished — if you are running out of room, return fewer complete questions
+- Do not wrap the JSON in markdown
+
+Source:
+${source}`;
+
+  const parsed = await generateJsonWithFallback(prompt, QUIZ_SCHEMA, {
+    ...requestOptions,
+    maxOutputTokens: 8192,
+    temperature: 0.35,
+  });
+  const quiz = normalizeQuizQuestions(parsed, primaryType).slice(0, count);
+  if (!quiz.length) {
+    const error = new Error('The AI did not return complete quiz questions. Try fewer questions or a shorter document.');
+    error.statusCode = 502;
+    throw error;
+  }
+  return quiz;
+}
+
+async function explainTextSnippet(snippet, options = {}) {
+  const prompt = `Explain this excerpt for a student in 4-7 sentences. Define any technical terms. Be accurate and concrete.
+
+Excerpt:
+"${String(snippet).slice(0, 1000)}"`;
+  const { text } = await callGoogleAI(
+    [{ role: 'user', parts: [{ text: prompt }] }],
+    { maxOutputTokens: 500, temperature: 0.4, thinkingConfig: { thinkingLevel: 'minimal' } },
+    { modelName: modelFor(options), premium: options.premium }
+  );
+  return text;
+}
+
+async function extractTextFromImages(images = [], options = {}) {
+  const usable = (Array.isArray(images) ? images : [])
+    .filter((image) => image && image.data)
+    .slice(0, 3);
+  if (!usable.length) {
+    const error = new Error('No images were provided for vision extraction.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const parts = usable.map((image, index) => ({
+    inlineData: {
+      mimeType: image.mimeType || 'image/jpeg',
+      data: String(image.data).replace(/^data:[^;]+;base64,/, ''),
+    },
+  }));
+  parts.push({
+    text: `These ${usable.length} image(s) are student study material (worksheet, notes, or slides).
+Transcribe ALL readable text in reading order. Keep math, code, tables, and labels.
+If handwriting is unclear, give your best reading and mark uncertain words with [?].
+Do not summarize. Return plain text only.`,
+  });
+
+  const { text } = await callGoogleAI(
+    [{ role: 'user', parts }],
+    { temperature: 0.1, maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: 'minimal' } },
+    { modelName: modelFor(options), timeoutMs: 90000 }
+  );
+  if (!text || text.replace(/\s+/g, ' ').trim().length < 8) {
+    const error = new Error('Vision did not read enough text from the image(s).');
+    error.statusCode = 502;
+    throw error;
+  }
+  return text;
+}
+
+async function generatePracticeSet({ subject, topic, mode, difficulty, numQuestions }, options = {}) {
+  const count = capQuestionCount(numQuestions || 7, options);
+  const subjectLabel = String(subject || 'general').replace(/[_-]/g, ' ');
+  const topicLabel = String(topic || subjectLabel).trim();
+  const practiceMode = String(mode || 'concept-quiz');
+  const level = ['easy', 'medium', 'hard'].includes(String(difficulty)) ? difficulty : 'medium';
+
+  let typeGuide = 'Use multiple_choice and short_answer.';
+  if (practiceMode === 'code-tracing') {
+    typeGuide = 'Mostly coding_trace questions. Include a short codeSnippet and language (javascript, python, or sql). correctAnswer is the output or result. options may be empty.';
+  } else if (practiceMode === 'worked-problems' || practiceMode === 'formula-drill') {
+    typeGuide = 'Use numeric and worked_problem types. For numeric, correctAnswer is a number and numericTolerance is a small value like 0.01. For worked_problem, correctAnswer is the final result.';
+  } else if (subject === 'computer-science' || subject === 'data-science') {
+    typeGuide = 'Mix multiple_choice, short_answer, and coding_trace. Include codeSnippet when tracing code.';
+  } else if (subject === 'calculus' || subject === 'statistics') {
+    typeGuide = 'Mix multiple_choice, numeric, and worked_problem.';
+  }
+
+  const prompt = `Create exactly ${count} ${level} practice questions for a student.
+Subject: ${subjectLabel}
+Topic: ${topicLabel}
+Mode: ${practiceMode}
+${typeGuide}
+
+Rules:
+- Test understanding, not trivia
+- Show enough context in the question to be answerable without extra material
+- For code, keep snippets under 20 lines
+- JSON fields: id, questionText, questionType, options, correctAnswer, briefExplanation, codeSnippet, language, numericTolerance
+- questionType must be one of: multiple_choice, select_all, short_answer, numeric, coding_trace, worked_problem
+- Never leave JSON unfinished`;
+
+  const parsed = await generateJsonWithFallback(prompt, QUIZ_SCHEMA, {
+    ...options,
+    maxOutputTokens: 8192,
+    temperature: 0.4,
+  });
+  const quiz = normalizeQuizQuestions(parsed, 'multiple_choice').slice(0, count);
+  if (!quiz.length) {
+    const error = new Error('Could not generate a practice set. Try a more specific topic.');
+    error.statusCode = 502;
+    throw error;
+  }
+  return quiz;
+}
+
+async function getFlashcardInteractionResponse(card, interactionType, userAnswer, userQuery, chatHistory = [], options = {}) {
+  if (interactionType === 'submit_answer') {
+    const prompt = `Flashcard term: "${card.term}"
+Official definition: "${card.definition}"
+Student answer: "${userAnswer || ''}"
+
+Grade the student answer as correct, incorrect, or partial. Be generous with wording if the meaning matches. Feedback must be at most 50 words.`;
     try {
-        const data = await callGoogleAI(contents, generationConfig);
-        const rawTextOutput = data.candidates[0].content.parts[0].text;
-        const jsonString = extractJsonFromString(rawTextOutput);
-        if(!jsonString) {
-            console.warn("AI response for quiz feedback was not valid JSON or was missing, attempting fallback.", rawTextOutput);
-            let correctness = "partial";
-            if (rawTextOutput.toLowerCase().includes("correct")) correctness = "correct";
-            else if (rawTextOutput.toLowerCase().includes("incorrect")) correctness = "incorrect";
-            return { feedback: rawTextOutput, correctness };
-        }
-        const jsonResponse = JSON.parse(jsonString);
-        if (typeof jsonResponse.correctness !== 'string' || typeof jsonResponse.feedback !== 'string') {
-             console.warn("Parsed JSON for quiz feedback has incorrect structure.", jsonResponse);
-             let correctness = "partial";
-             if (jsonResponse.feedback && jsonResponse.feedback.toLowerCase().includes("correct")) correctness = "correct";
-             else if (jsonResponse.feedback && (jsonResponse.feedback.toLowerCase().includes("incorrect") || jsonResponse.feedback.toLowerCase().includes("not quite"))) correctness = "incorrect";
-             return { feedback: jsonResponse.feedback || rawTextOutput, correctness };
-        }
-        return jsonResponse;
+      const parsed = await generateJsonWithFallback(prompt, FEEDBACK_SCHEMA, {
+        ...options,
+        maxOutputTokens: 400,
+      });
+      const correctness = ['correct', 'incorrect', 'partial'].includes(parsed.correctness) ? parsed.correctness : 'incorrect';
+      return { correctness, feedback: String(parsed.feedback || '').trim() || 'Checked.' };
     } catch (error) {
-        console.error("Error getting or parsing quiz answer feedback:", error);
-        let correctness = "partial"; 
-        if (userAnswerString.toLowerCase() === correctAnswerString.toLowerCase()) correctness = "correct";
-        return { feedback: `Could not get detailed AI feedback. Correct: ${correctAnswerString}`, correctness };
+      console.warn('Flashcard feedback fallback:', error.message);
+      const local = scoreLocally({ questionType: 'short_answer', correctAnswer: card.definition }, userAnswer);
+      return { correctness: local.correctness, feedback: local.feedback };
     }
+  }
+
+  if (interactionType === 'request_explanation') {
+    const prompt = `Explain this flashcard more fully for a student in at most 100 words.
+Term: "${card.term}"
+Definition: "${card.definition}"`;
+    const { text } = await callGoogleAI(
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      { maxOutputTokens: 280, thinkingConfig: { thinkingLevel: 'minimal' } },
+      { modelName: modelFor(options), premium: options.premium }
+    );
+    return { explanation: text };
+  }
+
+  if (interactionType === 'chat_message') {
+    const history = Array.isArray(chatHistory) ? chatHistory.slice(-8) : [];
+    const contents = [
+      ...history,
+      { role: 'user', parts: [{ text: `Card term: ${card.term}\nDefinition: ${card.definition}\nStudent: ${userQuery}` }] },
+    ];
+    const { text } = await callGoogleAI(
+      contents,
+      { maxOutputTokens: 220, thinkingConfig: { thinkingLevel: 'minimal' } },
+      { modelName: modelFor(options), premium: options.premium }
+    );
+    return {
+      chatResponse: text,
+      updatedChatHistory: [
+        ...history,
+        { role: 'user', parts: [{ text: userQuery }] },
+        { role: 'model', parts: [{ text }] },
+      ],
+    };
+  }
+
+  const error = new Error('Unknown flashcard interaction type.');
+  error.statusCode = 400;
+  throw error;
 }
 
-async function getQuizQuestionDetailedExplanation(question) {
-    const prompt = `Quiz Question: "${question.questionText}"
-Correct Answer(s): "${Array.isArray(question.correctAnswer) ? question.correctAnswer.join('; ') : question.correctAnswer}"
-The user requested a detailed explanation. Provide a clear, in-depth explanation (max 150 words) of the concept and why the answer is correct.
-Explanation:`;
-    const contents = [{ role: "user", parts: [{ text: prompt }] }];
-    const data = await callGoogleAI(contents, { maxOutputTokens: 250, temperature: 0.5 });
-    return { explanation: data.candidates[0].content.parts[0].text.trim() };
+async function getQuizAnswerFeedback(question, userAnswer, options = {}) {
+  const local = scoreLocally(question, userAnswer);
+  const prompt = `Question: "${question.questionText}"
+Type: ${question.questionType}
+Options: ${(question.options || []).join(' | ')}
+Correct answer: ${Array.isArray(question.correctAnswer) ? question.correctAnswer.join(' | ') : question.correctAnswer}
+Student answer: ${Array.isArray(userAnswer) ? userAnswer.join(' | ') : userAnswer}
+
+Return correctness as correct, incorrect, or partial, plus brief encouraging feedback (max 40 words).`;
+  try {
+    const parsed = await generateJsonWithFallback(prompt, FEEDBACK_SCHEMA, {
+      ...options,
+      maxOutputTokens: 400,
+    });
+    const correctness = ['correct', 'incorrect', 'partial'].includes(parsed.correctness) ? parsed.correctness : local.correctness;
+    return {
+      correctness,
+      feedback: String(parsed.feedback || '').trim() || local.feedback,
+    };
+  } catch (error) {
+    console.warn('Quiz feedback fallback to local scoring:', error.message);
+    return local;
+  }
 }
 
-async function chatAboutQuizQuestion(question, chatHistory, userQuery) {
-    let historyString = "Previous conversation (if any):\n";
-    chatHistory.forEach(msg => { historyString += `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.parts[0].text}\n`; });
-    const prompt = `You are an AI tutor helping with a quiz question.
-Quiz Question: "${question.questionText}"
-Correct Answer(s): "${Array.isArray(question.correctAnswer) ? question.correctAnswer.join('; ') : question.correctAnswer}"
-${chatHistory.length > 0 ? historyString : ''}
-User's new message: "${userQuery}"
-Respond concisely and helpfully (max 75 words), staying on topic.
-AI Response:`;
-    const contents = [{ role: "user", parts: [{ text: prompt }] }];
-    const data = await callGoogleAI(contents, { maxOutputTokens: 150 });
-    const aiTextResponse = data.candidates[0].content.parts[0].text.trim();
-    const newChatHistory = [...chatHistory, { role: "user", parts: [{ text: userQuery }] }, { role: "model", parts: [{ text: aiTextResponse }] }];
-    return { chatResponse: aiTextResponse, updatedChatHistory: newChatHistory };
+async function getQuizQuestionDetailedExplanation(question, options = {}) {
+  const prompt = `Explain why this quiz answer is correct in at most 120 words. Teach the concept, do not just restate the answer.
+Question: "${question.questionText}"
+Correct answer: ${Array.isArray(question.correctAnswer) ? question.correctAnswer.join(', ') : question.correctAnswer}
+Existing hint: ${question.briefExplanation || 'none'}`;
+  const { text } = await callGoogleAI(
+    [{ role: 'user', parts: [{ text: prompt }] }],
+    { maxOutputTokens: 360, thinkingConfig: { thinkingLevel: 'minimal' } },
+    { modelName: modelFor(options), premium: options.premium }
+  );
+  return { explanation: text };
 }
 
-async function regenerateQuizQuestion(originalQuestion, textContext, difficultyHint) {
-    const prompt = `Original Question: "${originalQuestion.questionText}" (Type: ${originalQuestion.questionType}).
-Text Context: """${textContext}"""
-Generate ONE NEW, DIFFERENT question testing a similar/related concept from the text.
-New question type: "${originalQuestion.questionType}". Difficulty: "${difficultyHint || 'medium'}".
-Respond ONLY with a single valid JSON object for the new question (id, questionText, questionType, options, correctAnswer, briefExplanation). No extra text.
-New Question JSON:`;
-    const contents = [{ role: "user", parts: [{ text: prompt }] }];
-    // For Gemma, we will not specify responseMimeType and rely on extractJsonFromString for JSON.
-    const generationConfig = { maxOutputTokens: 500 };
-    try {
-        const data = await callGoogleAI(contents, generationConfig);
-        const rawTextOutput = data.candidates[0].content.parts[0].text;
-        const jsonString = extractJsonFromString(rawTextOutput);
-        if (!jsonString) throw new Error("AI response for regenerated question was not valid JSON or was missing.");
-        const newQuestion = JSON.parse(jsonString);
-        if (!newQuestion.id || !newQuestion.questionText || !newQuestion.questionType || !Array.isArray(newQuestion.options) || newQuestion.correctAnswer === undefined || newQuestion.briefExplanation === undefined) {
-            throw new Error("Regenerated question JSON is missing required fields or is invalid.");
-        }
-        return newQuestion;
-    } catch (e) {
-        console.error("Error regenerating or parsing quiz question:", e);
-        // If parsing fails, we don't have a structured fallback generation here, just throw the error.
-        throw new Error(`Failed to regenerate quiz question: ${e.message}`);
-    }
+async function chatAboutQuizQuestion(question, chatHistory, userQuery, options = {}) {
+  const history = Array.isArray(chatHistory) ? chatHistory.slice(-8) : [];
+  const contents = [
+    ...history,
+    {
+      role: 'user',
+      parts: [{
+        text: `Quiz question: ${question.questionText}\nCorrect answer: ${Array.isArray(question.correctAnswer) ? question.correctAnswer.join(', ') : question.correctAnswer}\nStudent: ${userQuery}`,
+      }],
+    },
+  ];
+  const { text } = await callGoogleAI(
+    contents,
+    { maxOutputTokens: 220, thinkingConfig: { thinkingLevel: 'minimal' } },
+    { modelName: modelFor(options), premium: options.premium }
+  );
+  return {
+    chatResponse: text,
+    updatedChatHistory: [
+      ...history,
+      { role: 'user', parts: [{ text: userQuery }] },
+      { role: 'model', parts: [{ text }] },
+    ],
+  };
+}
+
+async function regenerateQuizQuestion(originalQuestion, textContext, difficultyHint, options = {}) {
+  const source = truncateSource(textContext, options);
+  const type = normalizeQuestionType(originalQuestion.questionType);
+  const prompt = `Write ONE new ${type} question testing the same concept as the original, but worded differently.
+Difficulty: ${difficultyHint || 'medium'}
+Original: "${originalQuestion.questionText}"
+If type is multiple_choice, provide 4 options.
+If type is select_all, correctAnswer must be pipe-separated.
+Use only this source:
+${source}`;
+  const parsed = await generateJsonWithFallback(prompt, SINGLE_QUESTION_SCHEMA, {
+    ...options,
+    maxOutputTokens: 1200,
+  });
+  const normalized = normalizeQuizQuestions([parsed], type);
+  if (!normalized.length) {
+    const error = new Error('Could not regenerate a valid replacement question.');
+    error.statusCode = 502;
+    throw error;
+  }
+  return normalized[0];
 }
 
 module.exports = {
@@ -415,5 +704,11 @@ module.exports = {
   getQuizAnswerFeedback,
   getQuizQuestionDetailedExplanation,
   chatAboutQuizQuestion,
-  regenerateQuizQuestion
+  regenerateQuizQuestion,
+  extractTextFromImages,
+  generatePracticeSet,
+  isPremiumRequest,
+  modelFor,
+  FREE_MODEL,
+  PREMIUM_MODEL,
 };

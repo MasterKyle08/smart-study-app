@@ -18,13 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!authFormToggle || !modalTitle || !authSubmitButton) return;
         
         if (isLoginMode) {
-            modalTitle.textContent = 'Login';
-            authSubmitButton.textContent = 'Login';
-            authFormToggle.innerHTML = `Don't have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Register</a>`;
+            modalTitle.textContent = 'Sign in';
+            authSubmitButton.textContent = 'Sign in';
+            authFormToggle.innerHTML = `Don't have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline">Create one</a>`;
         } else {
-            modalTitle.textContent = 'Register';
-            authSubmitButton.textContent = 'Register';
-            authFormToggle.innerHTML = `Already have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline hover:underline">Login</a>`;
+            modalTitle.textContent = 'Create account';
+            authSubmitButton.textContent = 'Create account';
+            authFormToggle.innerHTML = `Already have an account? <a href="#" id="toggleToRegister" class="font-medium text-indigo-600 hover:text-indigo-700 underline">Sign in</a>`;
         }
         
         const newToggleLink = document.getElementById('toggleToRegister');
@@ -70,12 +70,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (authFormMessage) clearMessage('authFormMessage');
         if (!authSubmitButton || !authForm) return;
 
-        authSubmitButton.disabled = true;
-        authSubmitButton.textContent = isLoginMode ? 'Logging in...' : 'Registering...';
-
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
-        if(!emailInput || !passwordInput) return;
+        if (!emailInput || !passwordInput) return;
+
+        authSubmitButton.disabled = true;
+        authSubmitButton.textContent = isLoginMode ? 'Signing in...' : 'Creating account...';
 
         const email = emailInput.value;
         const password = passwordInput.value;
@@ -84,25 +84,22 @@ document.addEventListener('DOMContentLoaded', () => {
             let response;
             if (isLoginMode) {
                 response = await apiLogin(email, password);
-                if (authFormMessage) showMessage('authFormMessage', 'Login successful! Redirecting...', 'success');
+                if (authFormMessage) showMessage('authFormMessage', 'Signed in. Welcome back.', 'success');
             } else {
                 response = await apiRegister(email, password);
-                 if (authFormMessage) showMessage('authFormMessage', 'Registration successful! You can now log in.', 'success');
-                isLoginMode = true; 
-                updateAuthMode();   
+                if (authFormMessage) showMessage('authFormMessage', 'Account created. You are signed in.', 'success');
             }
 
-            if (response.token) {
-                localStorage.setItem('authToken', response.token);
-                localStorage.setItem('userEmail', response.user.email); 
-                updateNav(true, response.user.email);
-                
+            if (response.user) {
+                localStorage.removeItem('authToken');
+                localStorage.setItem('userEmail', response.user.email);
+                localStorage.setItem('userPlan', response.user.plan || 'free');
+                localStorage.setItem('userIsAdmin', response.user.isAdmin ? '1' : '0');
+                updateNav(true, response.user.email, response.user.plan || 'free', Boolean(response.user.isAdmin));
+                if (typeof window.refreshUsageMeter === 'function') window.refreshUsageMeter();
                 setTimeout(() => {
                     toggleElementVisibility('authModal', false);
-                    if (window.location.pathname.endsWith('index.html') || window.location.pathname === '/') {
-                        // No specific redirect needed beyond nav update.
-                    }
-                }, 1500);
+                }, 700);
             }
         } catch (error) {
             const message = error.data?.message || error.message || 'An unknown error occurred.';
@@ -111,11 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
             authSubmitButton.disabled = false;
             // updateAuthMode(); // Already called in registration success, might cause issues if called again here.
             // Let's ensure it's correctly set for the current mode if no mode switch happened.
-             if (isLoginMode) {
-                authSubmitButton.textContent = 'Login';
-            } else {
-                authSubmitButton.textContent = 'Register';
-            }
+            authSubmitButton.textContent = isLoginMode ? 'Sign in' : 'Create account';
         }
     }
 
@@ -123,12 +116,15 @@ document.addEventListener('DOMContentLoaded', () => {
         authForm.addEventListener('submit', handleAuthFormSubmit);
     }
 
-    function handleLogout() {
+    async function handleLogout() {
+        try { if (typeof apiLogout === 'function') await apiLogout(); } catch (_err) { /* ignore */ }
         localStorage.removeItem('authToken');
         localStorage.removeItem('userEmail');
+        localStorage.removeItem('userPlan');
+        localStorage.removeItem('userIsAdmin');
         updateNav(false);
         if (window.location.pathname.includes('dashboard.html')) {
-            window.location.href = '/index.html';
+            window.location.href = '/';
         }
     }
 
@@ -142,12 +138,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const token = localStorage.getItem('authToken');
-    const userEmail = localStorage.getItem('userEmail');
-    if (token && userEmail) {
-        updateNav(true, userEmail);
-    } else {
-        updateNav(false);
+    async function restoreSession() {
+        if (typeof apiGetCurrentUser !== 'function') {
+            updateNav(false);
+            return;
+        }
+        try {
+            const { user } = await apiGetCurrentUser();
+            localStorage.removeItem('authToken');
+            localStorage.setItem('userEmail', user.email);
+            localStorage.setItem('userPlan', user.plan || 'free');
+            localStorage.setItem('userIsAdmin', user.isAdmin ? '1' : '0');
+            updateNav(true, user.email, user.plan || 'free', Boolean(user.isAdmin));
+            if (typeof window.refreshUsageMeter === 'function') window.refreshUsageMeter();
+        } catch (_error) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userEmail');
+            localStorage.removeItem('userPlan');
+            localStorage.removeItem('userIsAdmin');
+            updateNav(false);
+        }
     }
+
+    restoreSession();
     updateAuthMode(); 
 });

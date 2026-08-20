@@ -21,6 +21,7 @@ window.currentQuizOptions = {
 };
 window.currentQuizTextContext = ""; 
 window.originalFullQuizData = null; 
+window.currentQuizSessionType = 'standard';
 
 // General application state
 window.lastProcessedResults = null; 
@@ -107,7 +108,7 @@ function setupTabs(tabLinkContainerSelector) {
             if (link.classList.contains('opacity-50') || link.disabled) { event.preventDefault(); return; }
             const targetId = link.dataset.tab;
             tabLinks.forEach(tl => tl.removeAttribute('data-active'));
-            const tabSystemContainer = tabLinkContainer.closest('#resultsSection') || tabLinkContainer.closest('#sessionDetailModal');
+            const tabSystemContainer = tabLinkContainer.closest('#resultsSection') || tabLinkContainer.closest('#sessionDetailModal') || tabLinkContainer.parentElement;
             const contentPanes = tabSystemContainer ? tabSystemContainer.querySelectorAll('.tab-content') : [];
             
             contentPanes.forEach(pane => { pane.classList.add('hidden'); pane.removeAttribute('data-active'); });
@@ -116,6 +117,25 @@ function setupTabs(tabLinkContainerSelector) {
             if (targetContent) { targetContent.classList.remove('hidden'); targetContent.dataset.active = "true"; }
         });
     });
+}
+
+function unescapeHtmlLite(value) {
+    return String(value).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/<br>/g, '\n');
+}
+
+function renderMathHtml(html) {
+    if (typeof katex === 'undefined') return html;
+    const replace = (input, pattern, displayMode) => input.replace(pattern, (full, expr) => {
+        try {
+            return katex.renderToString(unescapeHtmlLite(expr), { displayMode, throwOnError: false });
+        } catch (_err) {
+            return full;
+        }
+    });
+    let out = replace(html, /\$\$([\s\S]+?)\$\$/g, true);
+    out = replace(out, /\\\[([\s\S]+?)\\\]/g, true);
+    out = replace(out, /\\\(([\s\S]+?)\\\)/g, false);
+    return out;
 }
 
 function processTextForDisplay(text, keywordsToHighlight = []) {
@@ -131,25 +151,36 @@ function processTextForDisplay(text, keywordsToHighlight = []) {
             }
         });
     }
-    return html.replace(/\n/g, '<br>');
+    return renderMathHtml(html.replace(/\n/g, '<br>'));
 }
 
-function updateNav(isLoggedIn, userEmail = '') {
+function updateNav(isLoggedIn, userEmail = '', userPlan = '', isAdmin = false) {
     const loginNavButton = document.getElementById('loginNavButton');
     const registerNavButton = document.getElementById('registerNavButton');
     const dashboardNavButton = document.getElementById('dashboardNavButton');
     const logoutNavButton = document.getElementById('logoutNavButton');
     const userActionsSection = document.getElementById('userActions');
     const userEmailSpan = document.getElementById('userEmail');
+    const planBadge = document.getElementById('planBadge');
+    const plan = userPlan || localStorage.getItem('userPlan') || 'free';
+    const admin = Boolean(isAdmin) || localStorage.getItem('userIsAdmin') === '1';
+
+    document.querySelectorAll('.nav-auth-guest').forEach((el) => el.classList.toggle('hidden', isLoggedIn));
+    document.querySelectorAll('.nav-auth-user').forEach((el) => el.classList.toggle('hidden', !isLoggedIn));
+    document.querySelectorAll('.nav-auth-admin').forEach((el) => el.classList.toggle('hidden', !isLoggedIn || !admin));
 
     if (isLoggedIn) {
         if (loginNavButton) loginNavButton.classList.add('hidden');
         if (registerNavButton) registerNavButton.classList.add('hidden');
         if (dashboardNavButton) dashboardNavButton.classList.remove('hidden');
         if (logoutNavButton) logoutNavButton.classList.remove('hidden');
-        if(userActionsSection && userEmailSpan && (window.location.pathname.endsWith('index.html') || window.location.pathname === '/')) {
+        if (userActionsSection && userEmailSpan) {
             userEmailSpan.textContent = userEmail;
             userActionsSection.classList.remove('hidden');
+        }
+        if (planBadge) {
+            planBadge.textContent = plan === 'premium' ? 'Premium' : 'Free plan';
+            planBadge.classList.remove('hidden');
         }
     } else {
         if (loginNavButton) loginNavButton.classList.remove('hidden');
@@ -158,7 +189,35 @@ function updateNav(isLoggedIn, userEmail = '') {
         if (logoutNavButton) logoutNavButton.classList.add('hidden');
         if (userActionsSection) userActionsSection.classList.add('hidden');
         if (userEmailSpan) userEmailSpan.textContent = '';
+        if (planBadge) planBadge.classList.add('hidden');
     }
+}
+
+function setupAppShell() {
+    const toggle = document.getElementById('mobileNavToggle');
+    const drawer = document.getElementById('mobileNavDrawer');
+    if (toggle && drawer) {
+        toggle.addEventListener('click', () => {
+            const open = drawer.classList.contains('hidden');
+            drawer.classList.toggle('hidden', !open);
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        drawer.querySelectorAll('a, button').forEach((item) => {
+            item.addEventListener('click', () => {
+                drawer.classList.add('hidden');
+                toggle.setAttribute('aria-expanded', 'false');
+            });
+        });
+    }
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            if (drawer) drawer.classList.add('hidden');
+            ['authModal', 'flashcardStudyModal-main', 'flashcardStudyModal-modal', 'sessionDetailModal'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el && el.dataset.visible === 'true') toggleElementVisibility(id, false);
+            });
+        }
+    });
 }
 
 function renderSummary(container, summaryText) {
@@ -321,6 +380,7 @@ function displayResults(results) {
 
     if (!resultsSection) return;
     resultsSection.classList.remove('hidden');
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.lastProcessedResults = results;
     window.currentExtractedTextForQuiz = results.extractedText || "";
     window.currentKeywordsForHighlighting = results.summaryKeywords || [];
@@ -387,6 +447,25 @@ function displayResults(results) {
         if (quizTabLink) { quizTabLink.classList.add('opacity-50', 'cursor-not-allowed', 'hidden'); quizTabLink.disabled = true; }
     }
     initializeQuizSystem(); 
+
+    const resultsNotice = document.getElementById('resultsNotice');
+    if (resultsNotice) {
+        const notices = [];
+        if (results.usageThisRun && results.usageThisRun.requests) {
+            const src = results.usageThisRun.source === 'api' ? 'from Google’s usage data' : (results.usageThisRun.source === 'estimate' ? 'estimated from prompt size' : 'Google usage + estimate');
+            notices.push(`This run: ${results.usageThisRun.requests} API request(s), ${Number(results.usageThisRun.inputTokens).toLocaleString()} input tokens, ${Number(results.usageThisRun.outputTokens).toLocaleString()} output tokens (${src}).`);
+        }
+        if (Array.isArray(results.warnings) && results.warnings.length) notices.push(results.warnings.join(' '));
+        if (results.savedToAccount) notices.push('Saved to your dashboard.');
+        else if (!localStorage.getItem('userEmail')) notices.push('Sign in to save this session to your dashboard.');
+        if (notices.length) {
+            resultsNotice.textContent = notices.join(' ');
+            resultsNotice.classList.remove('hidden');
+        } else {
+            resultsNotice.classList.add('hidden');
+        }
+    }
+    if (typeof window.refreshUsageMeter === 'function') window.refreshUsageMeter(results.usageThisRun);
 
     document.querySelectorAll('#resultsSection .tab-link').forEach(tl => { tl.removeAttribute('data-active'); document.getElementById(tl.dataset.tab)?.classList.add('hidden'); });
     if (firstAvailableTabLink) firstAvailableTabLink.click();
@@ -512,6 +591,12 @@ function displayFlashcard(index) {
             <div class="mt-auto pt-2 flex flex-wrap gap-2 justify-between items-center border-t border-slate-200">
                 <button id="explainFlashcardBtn-${flashcardContext}" class="flashcard-modal-action-btn bg-sky-500 hover:bg-sky-600 focus:ring-sky-400 text-xs">Explain More</button>
                 <button id="flipToFrontBtn-${flashcardContext}" class="flashcard-modal-action-btn bg-slate-500 hover:bg-slate-600 focus:ring-slate-400 text-xs">Flip to Front</button>
+            </div>
+            <div class="srs-row">
+                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(0)">Again</button>
+                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(3)">Hard</button>
+                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(4)">Good</button>
+                <button type="button" class="btn-primary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(5)">Easy</button>
             </div>
         </div>`;
     cardInner.appendChild(frontFace); cardInner.appendChild(backFace);
@@ -772,16 +857,19 @@ async function handleStartQuiz(forceRegenerate = false) {
 
     try {
         let quizDataToUse;
-        const optionsContainer = document.getElementById('quizOptionsGroup') || document.getElementById('quizSetupView');
+        const setupView = document.getElementById('quizSetupView');
+        const uploadOptions = document.getElementById('quizOptionsGroup');
+        const optionsContainer = forceRegenerate && setupView ? setupView : (uploadOptions || setupView);
 
         if (forceRegenerate || !window.currentQuizData || window.currentQuizData.length === 0) {
             const textToUse = window.currentExtractedTextForQuiz || (window.lastProcessedResults ? window.lastProcessedResults.extractedText : null);
             if (!textToUse || textToUse.trim() === "") throw new Error("No text available to generate quiz.");
             window.currentQuizTextContext = textToUse;
 
-            const questionTypes = Array.from(optionsContainer.querySelectorAll('input[name="quizQuestionTypeOption"]:checked')).map(cb => cb.value);
-            const numQuestions = optionsContainer.querySelector('input[name="quizNumQuestionsOption"]:checked')?.value || 'ai_choice';
-            const difficulty = optionsContainer.querySelector('input[name="quizDifficultyOption"]:checked')?.value || 'medium';
+            const typeInputs = optionsContainer.querySelectorAll('input[name="regenQuizQuestionTypeOption"]:checked, input[name="quizQuestionTypeOption"]:checked');
+            const questionTypes = Array.from(typeInputs).map(cb => cb.value);
+            const numQuestions = optionsContainer.querySelector('input[name="regenQuizNumQuestionsOption"]:checked, input[name="quizNumQuestionsOption"]:checked')?.value || 'ai_choice';
+            const difficulty = optionsContainer.querySelector('input[name="regenQuizDifficultyOption"]:checked, input[name="quizDifficultyOption"]:checked')?.value || 'medium';
             if (questionTypes.length === 0) {
                 showMessage('quizLoadingStatus', 'Please select at least one question type.', 'error', 3000);
                 if(quizSetupView) quizSetupView.classList.remove('hidden'); if(startQuizBtn) startQuizBtn.disabled = false;
@@ -801,6 +889,7 @@ async function handleStartQuiz(forceRegenerate = false) {
         window.currentQuizQuestionIndex = 0;
         window.userQuizAnswers = new Array(window.currentQuizData.length).fill(null);
         window.quizQuestionStates = new Array(window.currentQuizData.length).fill('unanswered');
+        window.currentQuizSessionType = 'standard';
         renderQuizInterface();
         if(quizInterfaceContainer) quizInterfaceContainer.classList.remove('hidden');
     } catch (error) {
@@ -875,8 +964,15 @@ function renderQuizInterface() {
                 <span>${processTextForDisplay(option)}</span>
             </label>`).join('');
         }
-    } else if (question.questionType === 'short_answer') {
-        optionsHtml = `<textarea id="shortAnswerText" class="form-textarea w-full rounded-lg border-slate-300 shadow-sm text-sm p-2" rows="3" placeholder="Type your answer here..." ${isAnswered || isMarked ? 'disabled' : ''} oninput="window.handleQuizAnswerSelection(this.value, 'short_answer')">${escapeHtml(userAnswer || '')}</textarea>`;
+    } else if (question.questionType === 'short_answer' || question.questionType === 'worked_problem' || question.questionType === 'coding_trace') {
+        const codeBlock = question.codeSnippet ? `<pre class="code-block mb-3"><code>${escapeHtml(question.codeSnippet)}</code></pre>` : '';
+        const lang = question.language ? `<p class="text-xs mb-2" style="color:var(--muted)">${escapeHtml(question.language)}</p>` : '';
+        const runner = (question.questionType === 'coding_trace' && String(question.language || '').toLowerCase().includes('javascript'))
+            ? `<button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs mb-2" onclick="window.runQuizCodeSnippet()">Run JavaScript snippet</button><pre id="codeRunnerOutput" class="code-block mb-3 hidden"></pre>`
+            : '';
+        optionsHtml = `${lang}${codeBlock}${runner}<textarea id="shortAnswerText" class="form-textarea w-full rounded-lg border-slate-300 shadow-sm text-sm p-2" rows="3" placeholder="${question.questionType === 'coding_trace' ? 'What is the output or result?' : 'Type your answer...'}" ${isAnswered || isMarked ? 'disabled' : ''} oninput="window.handleQuizAnswerSelection(this.value, 'short_answer')">${escapeHtml(userAnswer || '')}</textarea>`;
+    } else if (question.questionType === 'numeric') {
+        optionsHtml = `<input type="number" step="any" id="numericAnswer" class="form-input w-full rounded-lg text-sm p-2" placeholder="Numeric answer" value="${escapeHtml(userAnswer || '')}" ${isAnswered || isMarked ? 'disabled' : ''} oninput="window.handleQuizAnswerSelection(this.value, 'short_answer')">`;
     } else {
         console.error("Unknown question type found:", question.questionType, question);
         optionsHtml = `<p class="text-red-500">Error: Could not display question. Unknown type: ${escapeHtml(question.questionType)}</p>`;
@@ -1099,20 +1195,97 @@ window.finishQuiz = function() {
     const total = window.currentQuizData.length;
     const percentage = total > 0 ? (score / total) * 100 : 0;
     let msg = percentage >= 80 ? "Excellent work!" : percentage >= 60 ? "Great job!" : "Good effort!";
+    const questionSummaryHtml = window.currentQuizData.map((q, i) => {
+        const rawText = (q.questionText || q.question || q.prompt || '').toString();
+        const preview = rawText.length > 60 ? `${rawText.substring(0, 57)}...` : rawText;
+        const state = window.quizQuestionStates[i] || 'unanswered';
+        const badgeClass =
+            state === 'correct' ? 'bg-green-100 text-green-700' :
+            state === 'incorrect' ? 'bg-red-100 text-red-700' :
+            state === 'partial' ? 'bg-yellow-100 text-yellow-700' :
+            state === 'marked' ? 'bg-purple-100 text-purple-700' :
+            state === 'skipped' ? 'bg-slate-300 text-slate-700' :
+            'bg-slate-200 text-slate-600';
+        const stateLabel = state.replace(/^\w/, c => c.toUpperCase());
+        return `<div class="py-2 border-b last:border-b-0 text-sm flex justify-between items-center"><span><span class="font-medium">Q${i + 1}:</span> ${processTextForDisplay(preview)}</span><span class="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${badgeClass}">${stateLabel}</span></div>`;
+    }).join('');
+
+    const isPremadeQuizSession = window.currentQuizSessionType === 'premade';
+    const baseOptions = window.currentQuizOptions || { questionTypes: ['multiple_choice'], numQuestions: 'ai_choice', difficulty: 'medium' };
+    const questionTypeOptions = [
+        { value: 'multiple_choice', label: 'Multiple Choice' },
+        { value: 'select_all_that_apply', label: 'Select All That Apply' },
+        { value: 'short_answer', label: 'Short Answer' },
+    ];
+    const numQuestionChoices = [
+        { value: 'ai_choice', label: 'AI Decide' },
+        { value: '5', label: '5 Questions' },
+        { value: '7', label: '7 Questions' },
+        { value: '10', label: '10 Questions' },
+        { value: '12', label: '12 Questions' },
+        { value: '15', label: '15 Questions' },
+    ];
+    const difficultyChoices = [
+        { value: 'easy', label: 'Easy' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'hard', label: 'Hard' },
+    ];
+
+    const personalizationHtml = `
+        <div class="flex flex-col gap-5 mt-6">
+            <button onclick="window.retryAllQuestions()" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry Quiz</button>
+            <div class="border border-slate-200 bg-slate-50 rounded-lg p-4 text-left">
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Make it your own</h4>
+                <p class="text-sm text-slate-600 mb-4">Generate a personalized version with AI and tweak the size or difficulty. Perfect for creating a custom session you can save to your dashboard.</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Question Types</p>
+                        <div class="flex flex-col space-y-2">
+                            ${questionTypeOptions.map(option => `
+                                <label class="inline-flex items-center space-x-2">
+                                    <input type="checkbox" name="premadePersonalQuestionType" value="${option.value}" ${Array.isArray(baseOptions.questionTypes) && baseOptions.questionTypes.includes(option.value) ? 'checked' : ''} class="form-checkbox h-4 w-4 text-teal-600 border-slate-300 focus:ring-teal-500">
+                                    <span class="text-sm text-slate-700">${option.label}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <label for="premadePersonalNumQuestions" class="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Question Count</label>
+                        <select id="premadePersonalNumQuestions" class="form-select w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm">
+                            ${numQuestionChoices.map(choice => `<option value="${choice.value}" ${String(baseOptions.numQuestions || 'ai_choice') === choice.value ? 'selected' : ''}>${choice.label}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="premadePersonalDifficulty" class="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Difficulty</label>
+                        <select id="premadePersonalDifficulty" class="form-select w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm">
+                            ${difficultyChoices.map(choice => `<option value="${choice.value}" ${String(baseOptions.difficulty || 'medium') === choice.value ? 'selected' : ''}>${choice.label}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+                <div id="premadePersonalizeStatus" class="text-sm mt-3"></div>
+                <div class="mt-4 flex flex-col sm:flex-row gap-3">
+                    <button id="premadePersonalizeGenerateBtn" onclick="window.generatePersonalizedQuizFromPremade()" class="quiz-nav-button bg-teal-600 hover:bg-teal-700 text-white w-full sm:w-auto">Generate Personalized Quiz</button>
+                </div>
+            </div>
+        </div>`;
+
+    const standardActionsHtml = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
+            <button onclick="window.retryIncorrectQuestions()" class="quiz-nav-button bg-orange-500 hover:bg-orange-600 text-white w-full">Retry Incorrect/Partial</button>
+            <button onclick="window.retryAllQuestions()" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry All</button>
+            <button onclick="window.startNewQuizSameSettings()" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white w-full">New Quiz (Same Settings)</button>
+            <button onclick="window.changeQuizSettingsAndStartNew()" class="quiz-nav-button bg-indigo-500 hover:bg-indigo-600 text-white w-full">Change Settings & New Quiz</button>
+        </div>`;
+
     quizResultsContainer.innerHTML = `
         <div class="p-4 sm:p-6 bg-white rounded-xl shadow-xl text-center">
             <h3 class="text-xl sm:text-2xl font-semibold text-slate-800 mb-3">Quiz Completed!</h3>
             <p class="text-lg text-indigo-600 font-bold mb-2">Score: ${hasPartial ? score.toFixed(1) : score} / ${total} (${percentage.toFixed(1)}%)</p>
             <p class="text-slate-600 mb-6">${msg}</p>
             <div class="text-left my-6 max-h-60 overflow-y-auto border border-slate-200 rounded-md p-3 bg-slate-50">
-                ${window.currentQuizData.map((q, i) => `<div class="py-2 border-b last:border-b-0 text-sm flex justify-between items-center"><span><span class="font-medium">Q${i+1}:</span> ${processTextForDisplay(q.questionText.substring(0,50))}...</span><span class="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${window.quizQuestionStates[i] === 'correct' ? 'bg-green-100 text-green-700' : window.quizQuestionStates[i] === 'incorrect' ? 'bg-red-100 text-red-700' : window.quizQuestionStates[i] === 'partial' ? 'bg-yellow-100 text-yellow-700' : window.quizQuestionStates[i] === 'marked' ? 'bg-purple-100 text-purple-700' : 'bg-slate-200 text-slate-600'}">${window.quizQuestionStates[i].replace(/^\w/, c => c.toUpperCase())}</span></div>`).join('')}
+                ${questionSummaryHtml}
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
-                <button onclick="window.retryIncorrectQuestions()" class="quiz-nav-button bg-orange-500 hover:bg-orange-600 text-white w-full">Retry Incorrect/Partial</button>
-                <button onclick="window.retryAllQuestions()" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry All</button>
-                <button onclick="window.startNewQuizSameSettings()" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white w-full">New Quiz (Same Settings)</button>
-                <button onclick="window.changeQuizSettingsAndStartNew()" class="quiz-nav-button bg-indigo-500 hover:bg-indigo-600 text-white w-full">Change Settings & New Quiz</button>
-            </div>
+            ${isPremadeQuizSession ? personalizationHtml : standardActionsHtml}
         </div>`;
     updateQuizStartButtonState();
 }
@@ -1151,8 +1324,11 @@ window.changeQuizSettingsAndStartNew = function() {
 
 // --- DOMContentLoaded ---
 document.addEventListener('DOMContentLoaded', () => {
+    setupAppShell();
     if(document.getElementById('resultsSection')) setupTabs('#resultsSection .tabs');
-    if(document.getElementById('currentYear')) setCurrentYear('currentYear');
+    ['currentYear', 'currentYearDashboard', 'currentYearPremade'].forEach((id) => {
+        if (document.getElementById(id)) setCurrentYear(id);
+    });
     if(document.getElementById('quizSetupView')) initializeQuizSystem();
 
     const mainExplainButton = document.getElementById('explainSelectedSummaryTextButton');
@@ -1218,6 +1394,71 @@ window.displayResults = displayResults;
 window.renderSummary = renderSummary;
 window.renderQuiz = renderQuiz;
 window.renderInteractiveFlashcards = renderInteractiveFlashcards; 
-window.updateNav = updateNav; 
+window.runQuizCodeSnippet = function runQuizCodeSnippet() {
+    const question = window.currentQuizData && window.currentQuizData[window.currentQuizQuestionIndex];
+    const out = document.getElementById('codeRunnerOutput');
+    if (!question || !out) return;
+    const code = question.codeSnippet || '';
+    out.classList.remove('hidden');
+    out.textContent = 'Running...';
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.style.display = 'none';
+    const handle = (event) => {
+        if (event.source !== frame.contentWindow) return;
+        window.removeEventListener('message', handle);
+        frame.remove();
+        out.textContent = event.data && event.data.msg ? String(event.data.msg) : 'No output.';
+    };
+    window.addEventListener('message', handle);
+    frame.srcdoc = `<script>
+      (function(){
+        var logs=[];
+        console.log=function(){logs.push(Array.prototype.slice.call(arguments).join(' '));};
+        try {
+          var result=(function(){ ${code.replace(/<\/script/gi, '<\\/script')} })();
+          parent.postMessage({msg: (logs.join('\\n') + (result!==undefined ? (logs.length?'\\n':'') + String(result) : '')) || 'undefined'}, '*');
+        } catch(e) { parent.postMessage({msg: 'Error: ' + e.message}, '*'); }
+      })();
+    </script>`;
+    document.body.appendChild(frame);
+    setTimeout(() => { if (frame.parentNode) { frame.remove(); window.removeEventListener('message', handle); if (out.textContent === 'Running...') out.textContent = 'Timed out.'; } }, 1200);
+};
+window.updateNav = updateNav;
+window.setupAppShell = setupAppShell;
+window.rateFlashcardSrs = async function rateFlashcardSrs(quality) {
+    const card = allFlashcardsData[currentFlashcardIndex];
+    if (!card) return;
+    const key = `srs:${window.lastProcessedResults?.sessionId || window.currentDashboardSessionData?.id || 'local'}:${card.term}`;
+    const prev = JSON.parse(localStorage.getItem(key) || '{}');
+    const next = (function review(state, q) {
+        let repetitions = Number(state.repetitions) || 0;
+        let intervalDays = Number(state.intervalDays) || 0;
+        let easeFactor = Number(state.easeFactor) || 2.5;
+        if (q < 3) { repetitions = 0; intervalDays = 1; }
+        else {
+            if (repetitions === 0) intervalDays = 1;
+            else if (repetitions === 1) intervalDays = 6;
+            else intervalDays = Math.round(intervalDays * easeFactor);
+            repetitions += 1;
+        }
+        easeFactor = Math.max(1.3, easeFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
+        return { repetitions, intervalDays, easeFactor, dueAt: new Date(Date.now() + intervalDays * 86400000).toISOString() };
+    })(prev, quality);
+    localStorage.setItem(key, JSON.stringify(next));
+    if (localStorage.getItem('userEmail') && typeof apiSaveFlashcardReview === 'function') {
+        try {
+            await apiSaveFlashcardReview({
+                sessionId: window.lastProcessedResults?.sessionId || window.currentDashboardSessionData?.id || null,
+                card,
+                quality,
+            });
+        } catch (_err) { /* local schedule still saved */ }
+    }
+    if (currentFlashcardIndex < allFlashcardsData.length - 1) {
+        currentFlashcardIndex += 1;
+        displayFlashcard(currentFlashcardIndex);
+    }
+}; 
 window.initializeQuizSystem = initializeQuizSystem;
 window.escapeHtml = escapeHtml;
