@@ -87,13 +87,12 @@ const apiProcessContent = (
     summaryAudiencePurpose, summaryNegativeKeywords, quizOptions,
     visionImages
 ) => {
-  const token = localStorage.getItem('authToken'); 
   return request('/study/process', 'POST', {
     extractedText, originalFilename, originalContentType, outputFormats,
     summaryLengthPreference, summaryStylePreference, summaryKeywords, 
     summaryAudiencePurpose, summaryNegativeKeywords, quizOptions,
     visionImages,
-  }, !!token); 
+  }, !!localStorage.getItem('userEmail')); 
 };
 
 // --- Session Management ---
@@ -123,7 +122,7 @@ const apiRegenerateSessionContent = (
 const apiDeleteSession = (sessionId) => request(`/study/sessions/${sessionId}`, 'DELETE', null, true);
 
 // --- Snippet Explanation ---
-const hasAuthToken = () => !!localStorage.getItem('authToken');
+const hasAuthToken = () => !!localStorage.getItem('userEmail');
 
 const apiExplainSnippet = (snippet) => request('/study/explain-snippet', 'POST', { snippet }, hasAuthToken());
 

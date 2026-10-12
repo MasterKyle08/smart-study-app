@@ -1,0 +1,13 @@
+# Keep the build context limited to application source. No secrets or Windows modules.
+*
+!package.json
+!package-lock.json
+!server.js
+!tailwind.config.js
+!backend/
+!backend/**
+!public/
+!public/**
+!deploy/
+!deploy/oracle/
+!deploy/oracle/check-env.js

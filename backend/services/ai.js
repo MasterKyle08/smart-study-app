@@ -5,7 +5,7 @@
  * Premium uses a Gemini Flash-Lite model with native structured output.
  */
 
-const fetch = require('node-fetch');
+const { createGoogleRequester } = require('./googleRequest');
 const {
   recoverJson,
   normalizeFlashcards,
@@ -18,10 +18,15 @@ const { parseGoogleUsageMetadata, estimateTokens } = require('../utils/usageMath
 
 const FREE_API_KEY = (process.env.GOOGLE_FREE_API_KEY || process.env.GOOGLE_API_KEY || '').replace(/['"]/g, '');
 const PREMIUM_API_KEY = (process.env.GOOGLE_PREMIUM_API_KEY || '').replace(/['"]/g, '');
-const GOOGLE_API_KEY = FREE_API_KEY;
 const FREE_MODEL = (process.env.GOOGLE_AI_MODEL_NAME || 'gemma-4-31b-it').replace(/['"]/g, '');
 const PREMIUM_MODEL = (process.env.GOOGLE_PREMIUM_MODEL_NAME || 'gemini-3.5-flash-lite').replace(/['"]/g, '');
-const GOOGLE_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const googleRequest = createGoogleRequester();
+const FREE_FALLBACK_MODEL = process.env.GOOGLE_FREE_FALLBACK_MODEL === 'none'
+  ? '' : (process.env.GOOGLE_FREE_FALLBACK_MODEL || 'gemma-4-26b-a4b-it');
+
+function fallbackFor(modelName, premium) {
+  return !premium && /^gemma-4-/.test(modelName) && /^gemma-4-/.test(FREE_FALLBACK_MODEL) && FREE_FALLBACK_MODEL !== modelName ? FREE_FALLBACK_MODEL : undefined;
+}
 
 const FREE_MAX_SOURCE_CHARS = 14000;
 const PREMIUM_MAX_SOURCE_CHARS = 40000;
@@ -29,7 +34,7 @@ const FREE_MAX_QUIZ_QUESTIONS = 10;
 const PREMIUM_MAX_QUIZ_QUESTIONS = 15;
 const REQUEST_TIMEOUT_MS = 90000;
 
-if (!GOOGLE_API_KEY) {
+if (!FREE_API_KEY) {
   console.warn('Warning: GOOGLE_API_KEY is not defined. AI features will not work.');
 }
 
@@ -94,6 +99,7 @@ function extractCandidateText(data) {
   if (!candidate) return '';
   const parts = (candidate.content && candidate.content.parts) || [];
   return parts
+    .filter((part) => !part.thought)
     .map((part) => (typeof part.text === 'string' ? part.text : ''))
     .join('')
     .trim();
@@ -116,9 +122,6 @@ async function noteUsage(data, contents, premium, modelName) {
 
 async function callGoogleAI(contents, generationConfig = {}, { modelName, json = false, timeoutMs = REQUEST_TIMEOUT_MS, premium = false } = {}) {
   const apiKey = apiKeyFor({ premium });
-  const apiUrl = `${GOOGLE_API_URL_BASE}${modelName}:generateContent?key=${apiKey}`;
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
   const payload = {
     contents,
@@ -136,20 +139,9 @@ async function callGoogleAI(contents, generationConfig = {}, { modelName, json =
   }
 
   try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller ? controller.signal : undefined,
+    const { data, modelName: usedModel } = await googleRequest(payload, {
+      apiKey, modelName, premium, timeoutMs, fallbackModelName: fallbackFor(modelName, premium),
     });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const errorMessage = data.error?.message || `Google AI API request failed with status ${response.status}`;
-      const error = new Error(errorMessage);
-      error.statusCode = response.status >= 500 ? 502 : response.status;
-      throw error;
-    }
 
     if (!data.candidates || data.candidates.length === 0) {
       const block = data.promptFeedback && data.promptFeedback.blockReason;
@@ -159,18 +151,11 @@ async function callGoogleAI(contents, generationConfig = {}, { modelName, json =
     }
 
     const text = extractCandidateText(data);
-    await noteUsage(data, contents, premium, modelName);
+    await noteUsage(data, contents, premium, usedModel);
     return { data, text, finishReason: data.candidates[0].finishReason || '' };
   } catch (error) {
-    if (error.name === 'AbortError') {
-      const timeoutError = new Error('The AI took too long to respond. Try a shorter document or fewer questions.');
-      timeoutError.statusCode = 504;
-      throw timeoutError;
-    }
     console.error('Error in callGoogleAI:', error.message);
     throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -194,42 +179,23 @@ async function generateJson(contents, { schema, modelName, temperature = 0.35, m
     request.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const apiUrl = `${GOOGLE_API_URL_BASE}${modelName}:generateContent?key=${apiKey}`;
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
-
   try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-      signal: controller ? controller.signal : undefined,
+    const { data, modelName: usedModel } = await googleRequest(request, {
+      apiKey, modelName, premium, timeoutMs: REQUEST_TIMEOUT_MS, fallbackModelName: fallbackFor(modelName, premium),
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(data.error?.message || `Google AI API request failed with status ${response.status}`);
-      error.statusCode = response.status >= 500 ? 502 : response.status;
-      throw error;
-    }
     const text = extractCandidateText(data);
-    await noteUsage(data, contents, premium, modelName);
+    await noteUsage(data, contents, premium, usedModel);
     const parsed = recoverJson(text);
     if (parsed == null) {
       const error = new Error('The AI returned content that could not be parsed as JSON.');
       error.statusCode = 502;
+      error.jsonParseFailure = true;
       error.rawText = text;
       throw error;
     }
     return parsed;
   } catch (error) {
-    if (error.name === 'AbortError') {
-      const timeoutError = new Error('The AI took too long to respond. Try a shorter document or fewer questions.');
-      timeoutError.statusCode = 504;
-      throw timeoutError;
-    }
     throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -237,6 +203,20 @@ async function generateJsonWithFallback(prompt, schema, options = {}) {
   const modelName = modelFor(options);
   const systemInstruction = 'Return only valid JSON. Do not include markdown fences, commentary, or trailing text.';
   const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+
+  if (/^gemma-/.test(modelName)) {
+    // Use explicit prompt JSON for Gemma; do not spend an extra request probing
+    // Gemini's schema-constrained output mode on each generation.
+    const jsonPrompt = `${prompt}\n\nReturn valid JSON only, without markdown or commentary. Follow this field/type specification:\n${JSON.stringify(schema)}`;
+    const { text } = await callGoogleAI(
+      [{ role: 'user', parts: [{ text: jsonPrompt }] }],
+      { temperature: options.temperature ?? 0.35, maxOutputTokens: options.maxOutputTokens || 6144 },
+      { modelName, premium: options.premium }
+    );
+    const parsed = recoverJson(text);
+    if (parsed == null) throw Object.assign(new Error('The AI returned invalid JSON. Try fewer questions or a shorter document.'), { statusCode: 502 });
+    return parsed;
+  }
 
   try {
     return await generateJson(contents, {
@@ -248,6 +228,8 @@ async function generateJsonWithFallback(prompt, schema, options = {}) {
       premium: options.premium,
     });
   } catch (firstError) {
+    const unsupportedJson = firstError.googleStatus === 400 && /schema|json|mime|not supported/i.test(firstError.message);
+    if (!firstError.jsonParseFailure && !unsupportedJson) throw firstError;
     console.warn('Structured JSON generation failed, retrying with prompt-only JSON:', firstError.message);
     const retryPrompt = `${prompt}\n\nIMPORTANT: Reply with JSON only. No markdown. No extra keys.`;
     const { text } = await callGoogleAI(
@@ -493,7 +475,7 @@ Do not summarize. Return plain text only.`,
   const { text } = await callGoogleAI(
     [{ role: 'user', parts }],
     { temperature: 0.1, maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: 'minimal' } },
-    { modelName: modelFor(options), timeoutMs: 90000 }
+    { modelName: modelFor(options), timeoutMs: 90000, premium: options.premium }
   );
   if (!text || text.replace(/\s+/g, ' ').trim().length < 8) {
     const error = new Error('Vision did not read enough text from the image(s).');

@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const nodemailer = require('nodemailer');
 const { notifyEmails } = require('../utils/adminRules');
 
 function smsConfigured() {
@@ -37,12 +38,6 @@ async function sendSms(to, body) {
 }
 
 async function sendSmtp({ to, subject, text }) {
-  let nodemailer;
-  try {
-    nodemailer = require('nodemailer');
-  } catch (_err) {
-    return { sent: false, channel: 'email', reason: 'nodemailer_missing' };
-  }
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587', 10),

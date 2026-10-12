@@ -9,7 +9,8 @@ require('dotenv').config(); // Load environment variables from .env file
 const app = require('./backend/app'); // Import the configured Express app
 const { init: initDB, close: closeDB } = require('./backend/models/db'); // Import Turso DB functions
 
-const PORT = process.env.PORT || 3000; // Use port from environment or default to 3000
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 /**
  * Initializes the database and starts the Express server.
@@ -32,9 +33,8 @@ async function startServer() {
     }
 
     // Start the Express server
-    app.listen(PORT, () => {
-      console.log(`Smart Study AI server running on port ${PORT}`);
-      console.log(`Access the app at http://localhost:${PORT}`);
+    app.listen(PORT, HOST, () => {
+      console.log(`Smart Study AI server listening on ${HOST}:${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start the server:', error);

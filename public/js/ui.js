@@ -218,6 +218,53 @@ function setupAppShell() {
             });
         }
     });
+
+    document.querySelectorAll('.copy-button').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+            const targetId = event.currentTarget.dataset.target;
+            const contentElement = document.getElementById(targetId);
+            if (!contentElement) return;
+            const textToCopy = (contentElement.tagName === 'TEXTAREA' || contentElement.tagName === 'INPUT')
+                ? contentElement.value
+                : contentElement.innerText;
+            try {
+                await navigator.clipboard.writeText(textToCopy);
+            } catch (_err) {
+                const textArea = document.createElement('textarea');
+                textArea.value = textToCopy;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-9999px';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            const originalText = event.currentTarget.textContent;
+            event.currentTarget.textContent = 'Copied!';
+            setTimeout(() => { event.currentTarget.textContent = originalText; }, 1500);
+        });
+    });
+
+    document.querySelectorAll('.download-button').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            const targetId = event.currentTarget.dataset.target;
+            const filename = event.currentTarget.dataset.filename || 'download.txt';
+            const contentElement = document.getElementById(targetId);
+            if (!contentElement) return;
+            const textToDownload = (contentElement.tagName === 'TEXTAREA' || contentElement.tagName === 'INPUT')
+                ? contentElement.value
+                : contentElement.innerText;
+            const blob = new Blob([textToDownload], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        });
+    });
 }
 
 function renderSummary(container, summaryText) {
@@ -1326,7 +1373,7 @@ window.changeQuizSettingsAndStartNew = function() {
 document.addEventListener('DOMContentLoaded', () => {
     setupAppShell();
     if(document.getElementById('resultsSection')) setupTabs('#resultsSection .tabs');
-    ['currentYear', 'currentYearDashboard', 'currentYearPremade'].forEach((id) => {
+    ['currentYear', 'currentYearDashboard', 'currentYearPremade', 'currentYearPractice'].forEach((id) => {
         if (document.getElementById(id)) setCurrentYear(id);
     });
     if(document.getElementById('quizSetupView')) initializeQuizSystem();

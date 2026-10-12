@@ -1,8 +1,14 @@
 # Dependencies
 node_modules/
+.npm-cache/
 
 # Environment variables and cloud keys (never commit these)
 .env
+.env.*
+!.env.example
+backups/
+oracle-upload.zip
+/.deploy/
 *service-account*.json
 gcp-key.json
 

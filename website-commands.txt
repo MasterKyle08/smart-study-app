@@ -1,0 +1,128 @@
+SMART STUDY WEBSITE - PUTTY COMMANDS
+
+Server: 132.145.197.174
+SSH user: ubuntu
+Website: https://study.132-145-197-174.sslip.io
+Project: /home/ubuntu/smart-study-app
+Screen session: website
+
+Automatic GitHub updates: see deploy/oracle/AUTO-DEPLOY.md for one-time setup.
+Once enabled, pushes to main deploy automatically; the server .env is preserved.
+
+Run the commands for the task you want. Do not paste this entire document
+into PuTTY as one script. Commands below assume setup is already complete.
+
+CONNECT AND RETURN TO YOUR WEBSITE TERMINAL
+Connect with PuTTY using ubuntu@132.145.197.174 and your private SSH key.
+
+Reattach your existing Screen session:
+screen -r website
+
+If it says the session is still attached:
+screen -d -r website
+
+If there is no session, create one:
+screen -S website
+
+List Screen sessions:
+screen -ls
+
+Enter the project directory before running website commands:
+cd /home/ubuntu/smart-study-app
+
+START THE WEBSITE
+sudo docker compose up -d --wait --wait-timeout 180
+
+STOP THE WHOLE WEBSITE
+sudo docker compose stop
+
+RESTART / RESET THE RUNNING WEBSITE PROCESSES
+sudo docker compose restart
+This restarts the app and HTTPS proxy. It does not delete accounts or data.
+
+RESTART JUST THE APP
+sudo docker compose restart app
+
+RESTART JUST THE HTTPS PROXY
+sudo docker compose restart caddy
+
+RECREATE THE CONTAINERS IF A NORMAL RESTART DOES NOT HELP
+sudo docker compose up -d --force-recreate --wait --wait-timeout 180
+This preserves the remote Turso database and HTTPS certificate volumes.
+Use the deployment script below if source code or dependencies changed.
+
+CHECK WEBSITE STATUS
+sudo docker compose ps
+
+CHECK LOCAL APP HEALTH
+curl -fsS http://127.0.0.1:3000/health
+Expected response: {"ok":true}
+
+CHECK PUBLIC HTTPS
+curl -I https://study.132-145-197-174.sslip.io
+
+VIEW RECENT APP LOGS
+sudo docker compose logs --tail=100 app
+
+VIEW RECENT HTTPS / CERTIFICATE LOGS
+sudo docker compose logs --tail=100 caddy
+
+WATCH BOTH LOGS LIVE
+sudo docker compose logs -f --tail=100
+Press Ctrl+C to leave the log view. The website keeps running.
+
+SAVE RECENT LOGS TO A FILE
+sudo docker compose logs --no-color --tail=500 > website-logs.txt
+Download website-logs.txt with FileZilla if needed.
+
+UPDATE WEBSITE AFTER UPLOADING A FRESH ZIP WITH FILEZILLA
+cd /home/ubuntu/smart-study-app
+unzip -o oracle-upload.zip
+sed -i 's/\r$//' deploy/oracle/*.sh
+bash deploy/oracle/deploy.sh
+Unzip preserves the private .env because the ZIP excludes it.
+Unzip does not remove obsolete source files; remove deleted files separately.
+
+EDIT SERVER SETTINGS / API KEYS / EMAIL SETTINGS
+nano .env
+Save: Ctrl+O, then Enter. Exit: Ctrl+X.
+After saving, apply changes with:
+bash deploy/oracle/deploy.sh
+A normal restart does not load changed .env settings or new source code.
+
+BACK UP THE PRIVATE SERVER CONFIGURATION
+mkdir -p backups
+chmod 700 backups
+cp -p .env "backups/env-$(date +%Y%m%d-%H%M%S)"
+Download the backup privately with FileZilla.
+This backs up configuration only. Turso needs its own database backup/export.
+
+CHECK CPU / MEMORY USE
+sudo docker stats
+Press Ctrl+C to exit the display.
+
+CHECK DISK SPACE
+df -h /
+
+CHECK DOCKER DISK USE
+sudo docker system df
+
+UPDATE UBUNTU PACKAGES
+sudo apt update
+sudo apt upgrade -y
+
+REBOOT THE ENTIRE SERVER
+sudo reboot
+PuTTY disconnects and the website is briefly unavailable.
+Running containers restart automatically after boot; Screen sessions end.
+After reconnecting, create a new screen -S website session if needed.
+
+LEAVE SCREEN WITHOUT INTERRUPTING COMMANDS
+Press Ctrl+A, release both keys, then press D.
+You can close PuTTY after detaching. The website keeps running.
+
+RESET USERS / DATABASE
+The restart and recreate commands above do not reset users or passwords.
+Your database is hosted in Turso, not in the Oracle project directory.
+Deleting database records is a separate SQL operation in Turso.
+Do not use docker compose down -v or prune volumes: certificate data is there.

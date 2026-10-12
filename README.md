@@ -4,6 +4,8 @@ Turn worksheets, PDFs, photos, DOCX files, or pasted notes into summaries, flash
 
 Free users share **Gemma 4** (`gemma-4-31b-it`) from Google’s free tier. Premium is optional ($6/month): it uses **Gemini Flash-Lite** on a separate API key so paid traffic does not empty the shared free pool.
 
+Free requests can fall back to `gemma-4-26b-a4b-it` during provider errors/timeouts. See [AI reliability and diagnostics](deploy/oracle/AI-RELIABILITY.md) for defaults and logs.
+
 Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/smart-study-app)
 
 ## What it does
@@ -35,7 +37,13 @@ Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/s
 
 ## Local setup (new laptop)
 
-You do **not** upload `.env`, `node_modules`, or the SQLite files. Those stay on the machine. Copy `.env` from this laptop (USB, password manager, etc.) — it is gitignored on purpose.
+For Oracle Cloud Ampere A1 on Ubuntu 26.04, follow the [Oracle hosting guide](deploy/oracle/README.md). It uses the prepared ZIP uploaded through FileZilla, a persistent `screen -S website` terminal for extraction/setup, Docker, and automatic HTTPS.
+
+The prepared Oracle address is `https://study.132-145-197-174.sslip.io`. Upload the private `.env.oracle` as the server `.env` after adding the Gmail app password; keep the local `.env` for development.
+
+For updates on every push to `main`, follow the [GitHub auto-deployment setup](deploy/oracle/AUTO-DEPLOY.md). It works with the existing ZIP-installed server and preserves its private `.env`.
+
+Keep `.env`, `.env.oracle`, `node_modules`, and SQLite files out of GitHub. Transfer private configuration directly between machines; Oracle uses `.env.oracle` uploaded privately over SFTP as described in the hosting guide. Environment files are gitignored on purpose.
 
 ```bash
 git clone https://github.com/MasterKyle08/smart-study-app.git

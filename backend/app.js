@@ -16,6 +16,14 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === '1') {
+  app.set('trust proxy', 1);
+}
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 app.use(require('cors')({ origin: true, credentials: true }));
 app.use(cookieParser());
 app.use('/api/billing/webhook/stripe', express.raw({ type: 'application/json' }));

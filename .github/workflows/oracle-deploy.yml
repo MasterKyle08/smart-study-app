@@ -1,0 +1,74 @@
+name: Deploy to Oracle
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ORACLE_HOST: 132.145.197.174
+      ORACLE_USER: ubuntu
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install and test
+        run: |
+          npm ci
+          npm test
+          npm run test:oracle
+      - name: Package the committed application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --output="$RUNNER_TEMP/oracle-release.tar.gz" "$GITHUB_SHA" \
+            Dockerfile compose.yml .dockerignore package.json package-lock.json server.js tailwind.config.js \
+            backend public deploy
+          if tar -tzf "$RUNNER_TEMP/oracle-release.tar.gz" | grep -Ei '(^|/)(\.env($|\.)|node_modules/|.*service-account.*\.json$|gcp-key\.json$)|\.(ppk|pem|key|sqlite)(-|$)'; then
+            echo 'The release contains a private configuration/key/database file.' >&2
+            exit 1
+          fi
+      - name: Configure verified SSH access
+        shell: bash
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ORACLE_SSH_HOST_KEY: ${{ secrets.ORACLE_SSH_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_KEY" || { echo 'Set repository secret ORACLE_SSH_KEY.' >&2; exit 1; }
+          test -n "$ORACLE_SSH_HOST_KEY" || { echo 'Set repository secret ORACLE_SSH_HOST_KEY.' >&2; exit 1; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/oracle-ssh"
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$RUNNER_TEMP/oracle-ssh/key"
+          printf '%s %s\n' "$ORACLE_HOST" "$ORACLE_SSH_HOST_KEY" > "$RUNNER_TEMP/oracle-ssh/known_hosts"
+          ssh-keygen -y -f "$RUNNER_TEMP/oracle-ssh/key" > /dev/null
+      - name: Upload and deploy on the ARM server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(-i "$RUNNER_TEMP/oracle-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o "UserKnownHostsFile=$RUNNER_TEMP/oracle-ssh/known_hosts" -o ConnectTimeout=20 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=8)
+          target="$ORACLE_USER@$ORACLE_HOST"
+          ssh "${ssh_options[@]}" "$target" 'mkdir -p /home/ubuntu/smart-study-app/.deploy/incoming'
+          scp "${ssh_options[@]}" "$RUNNER_TEMP/oracle-release.tar.gz" \
+            "$target:/home/ubuntu/smart-study-app/.deploy/incoming/$GITHUB_SHA.tar.gz"
+          scp "${ssh_options[@]}" deploy/oracle/apply-release.sh \
+            "$target:/home/ubuntu/smart-study-app/.deploy/incoming/$GITHUB_SHA.sh"
+          ssh "${ssh_options[@]}" "$target" "bash '/home/ubuntu/smart-study-app/.deploy/incoming/$GITHUB_SHA.sh' '$GITHUB_SHA'"

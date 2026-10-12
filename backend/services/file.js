@@ -37,56 +37,78 @@ async function processUploadedText({
   let generatedSummary = null;
   let generatedFlashcards = null;
   let generatedQuiz = null;
+  const tasks = [];
+  const failures = [];
 
   if (wantsSummary) {
-    try {
-      generatedSummary = await aiService.generateSummary(
-        extractedText,
-        summaryLengthPreference,
-        summaryStylePreference,
-        summaryKeywords,
-        summaryAudiencePurpose,
-        summaryNegativeKeywords,
-        aiOptions
-      );
-      results.summary = generatedSummary;
-    } catch (aiError) {
-      console.error('[fileService] Summary generation failed:', aiError.message);
-      results.warnings.push(`Summary: ${aiError.message}`);
-    }
+    tasks.push(async () => {
+      try {
+        generatedSummary = await aiService.generateSummary(
+          extractedText,
+          summaryLengthPreference,
+          summaryStylePreference,
+          summaryKeywords,
+          summaryAudiencePurpose,
+          summaryNegativeKeywords,
+          aiOptions
+        );
+        results.summary = generatedSummary;
+      } catch (aiError) {
+        console.error('[fileService] Summary generation failed:', aiError.message);
+        results.warnings.push(`Summary: ${aiError.message}`);
+        failures.push(aiError);
+      }
+    });
   }
 
   if (wantsFlashcards) {
-    try {
-      generatedFlashcards = await aiService.generateFlashcards(extractedText, aiOptions);
-      results.flashcards = generatedFlashcards;
-    } catch (aiError) {
-      console.error('[fileService] Flashcard generation failed:', aiError.message);
-      results.warnings.push(`Flashcards: ${aiError.message}`);
-    }
+    tasks.push(async () => {
+      try {
+        generatedFlashcards = await aiService.generateFlashcards(extractedText, aiOptions);
+        results.flashcards = generatedFlashcards;
+      } catch (aiError) {
+        console.error('[fileService] Flashcard generation failed:', aiError.message);
+        results.warnings.push(`Flashcards: ${aiError.message}`);
+        failures.push(aiError);
+      }
+    });
   }
 
   if (wantsQuiz) {
-    try {
-      const currentQuizOptions = quizOptions || {
-        questionTypes: ['multiple_choice'],
-        numQuestions: 'ai_choice',
-        difficulty: 'medium',
-      };
-      if (!currentQuizOptions.questionTypes || currentQuizOptions.questionTypes.length === 0) {
-        currentQuizOptions.questionTypes = ['multiple_choice'];
+    tasks.push(async () => {
+      try {
+        const currentQuizOptions = quizOptions || {
+          questionTypes: ['multiple_choice'],
+          numQuestions: 'ai_choice',
+          difficulty: 'medium',
+        };
+        if (!currentQuizOptions.questionTypes || currentQuizOptions.questionTypes.length === 0) {
+          currentQuizOptions.questionTypes = ['multiple_choice'];
+        }
+        generatedQuiz = await aiService.generateQuizWithOptions(extractedText, currentQuizOptions, aiOptions);
+        results.quiz = generatedQuiz;
+      } catch (aiError) {
+        console.error('[fileService] Quiz generation failed:', aiError.message);
+        results.warnings.push(`Quiz: ${aiError.message}`);
+        failures.push(aiError);
       }
-      generatedQuiz = await aiService.generateQuizWithOptions(extractedText, currentQuizOptions, aiOptions);
-      results.quiz = generatedQuiz;
-    } catch (aiError) {
-      console.error('[fileService] Quiz generation failed:', aiError.message);
-      results.warnings.push(`Quiz: ${aiError.message}`);
+    });
+  }
+
+  // Independent outputs can overlap; the shared free-model transport also
+  // limits concurrency and spaces requests across every active study job.
+  let taskIndex = 0;
+  async function worker() {
+    while (taskIndex < tasks.length) {
+      const task = tasks[taskIndex++];
+      await task();
     }
   }
+  await Promise.all([worker(), worker()]);
 
   if (!generatedSummary && !generatedFlashcards && !generatedQuiz) {
     const error = new Error(results.warnings.join(' ') || 'Failed to generate any study materials.');
-    error.statusCode = 502;
+    error.statusCode = failures.length && failures.every(item => item.statusCode === 429) ? 429 : 502;
     throw error;
   }
 
