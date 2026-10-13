@@ -3,6 +3,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loadingSessionsMessage = document.getElementById('loadingSessions');
     const sessionDetailModal = document.getElementById('sessionDetailModal');
     const closeModalButton = document.getElementById('closeSessionDetailModalButton');
+    const sessionReaderContent = document.getElementById('sessionReaderContent');
+    let sessionReaderOpener = null;
     const modalTitle = document.getElementById('sessionModalTitle');
     const modalOriginalFilename = document.getElementById('modalOriginalFilename');
     const modalCreatedAt = document.getElementById('modalCreatedAt');
@@ -58,6 +60,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     if (typeof window.setupTabs === 'function') window.setupTabs('#sessionDetailModal .tabs');
+    sessionDetailModal?.querySelector('.tabs')?.addEventListener('click', event => {
+        if (event.target.closest('.tab-link') && sessionReaderContent) sessionReaderContent.scrollTop = 0;
+    });
 
     async function loadUserSessions() {
         if (!sessionsListContainer || !loadingSessionsMessage) return;
@@ -132,7 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         viewDetailsButton.textContent = 'View Details';
         viewDetailsButton.addEventListener('click', (e) => {
             e.stopPropagation(); 
-            openSessionDetailModal(session.id);
+            openSessionDetailModal(session.id, viewDetailsButton);
         });
         footerDiv.appendChild(viewDetailsButton);
 
@@ -152,11 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         contentDiv.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-            openSessionDetailModal(session.id);
-        });
-        titleElement.addEventListener('click', (e) => { 
-             if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-            openSessionDetailModal(session.id)
+            openSessionDetailModal(session.id, viewDetailsButton);
         });
         return card;
     }
@@ -173,9 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         customConfirmModalYes.addEventListener('click', async () => {
             if (sessionToDeleteId && cardElementToDelete) {
                 if (currentOpenSessionId === sessionToDeleteId && sessionDetailModal && sessionDetailModal.dataset.visible === 'true') {
-                     if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
-                     currentOpenSessionId = null;
-                     window.currentDashboardSessionData = null;
+                     closeSessionReader();
                 }
                 try {
                     await apiDeleteSession(sessionToDeleteId);
@@ -221,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (currentSectionDetails) { 
                     const contentDiv = document.createElement('div');
                     contentDiv.className = 'details-accordion-content';
-                    contentDiv.innerHTML = window.processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+                    contentDiv.innerHTML = window.processTextForDisplay(sectionContentHtml, keywordsToHighlight);
                     currentSectionDetails.appendChild(contentDiv);
                     modalSummaryOutput.appendChild(currentSectionDetails);
                 }
@@ -241,7 +240,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (firstHeadingFound && currentSectionDetails) {
             const contentDiv = document.createElement('div');
             contentDiv.className = 'details-accordion-content';
-            contentDiv.innerHTML = window.processTextForDisplay(sectionContentHtml.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+            contentDiv.innerHTML = window.processTextForDisplay(sectionContentHtml, keywordsToHighlight);
             currentSectionDetails.appendChild(contentDiv);
             modalSummaryOutput.appendChild(currentSectionDetails);
         } else if (sectionContentHtml.trim()) { 
@@ -267,10 +266,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                     modalSummaryOutput.appendChild(ul);
                 } else { 
-                     modalSummaryOutput.innerHTML = window.processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+                     modalSummaryOutput.innerHTML = window.processTextForDisplay(summaryText, keywordsToHighlight);
                 }
              } else {
-                modalSummaryOutput.innerHTML = window.processTextForDisplay(summaryText.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>'), keywordsToHighlight);
+                modalSummaryOutput.innerHTML = window.processTextForDisplay(summaryText, keywordsToHighlight);
              }
         }
         if (modalSummaryOutput.innerHTML.trim() !== "" && modalExplainInstruction) {
@@ -291,9 +290,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    async function openSessionDetailModal(sessionId) {
+    async function openSessionDetailModal(sessionId, opener = document.activeElement) {
+        sessionReaderOpener = opener;
         currentOpenSessionId = sessionId;
         if(regenerateOptionsDiv) regenerateOptionsDiv.classList.add('hidden'); 
+        regenerateButton?.setAttribute('aria-expanded', 'false');
         if(modalSummaryRegenOptionsDiv) modalSummaryRegenOptionsDiv.classList.add('hidden');
         if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
         if(modalExplanationOutput) {
@@ -321,7 +322,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.currentDashboardSessionData = session; 
             if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
 
-            if(modalTitle) modalTitle.textContent = session.original_filename || 'Session Details';
+            if(modalTitle) {
+                modalTitle.textContent = session.original_filename || 'Session Details';
+                modalTitle.title = modalTitle.textContent;
+            }
             if(modalOriginalFilename) modalOriginalFilename.textContent = session.original_filename || 'N/A';
             
             if(modalCreatedAt && session.created_at) modalCreatedAt.textContent = new Date(session.created_at.includes('Z') ? session.created_at : session.created_at + 'Z').toLocaleString();
@@ -394,10 +398,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const firstTabContentInModal = document.getElementById('modalSummaryTab');
             if(firstTabLinkInModal) {
                 firstTabLinkInModal.dataset.active = "true";
-                if(firstTabContentInModal) firstTabContentInModal.classList.remove('hidden');
+                if(firstTabContentInModal) {
+                    firstTabContentInModal.classList.remove('hidden');
+                    firstTabContentInModal.dataset.active = "true";
+                }
             }
             
             if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', true);
+            sessionDetailModal?.setAttribute('aria-hidden', 'false');
+            if (sessionReaderContent) sessionReaderContent.scrollTop = 0;
+            closeModalButton?.focus({ preventScroll: true });
         } catch (error) {
             if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
             alert(`Error opening session: ${error.message || 'Could not load session details.'}`);
@@ -409,22 +419,49 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    if (closeModalButton) {
-        closeModalButton.addEventListener('click', () => {
-            if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
-            currentOpenSessionId = null;
-            window.currentDashboardSessionData = null;
-        });
+    function closeSessionReader() {
+        if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
+        sessionDetailModal?.setAttribute('aria-hidden', 'true');
+        currentOpenSessionId = null;
+        window.currentDashboardSessionData = null;
+        sessionReaderOpener?.focus({ preventScroll: true });
     }
+    closeModalButton?.addEventListener('click', closeSessionReader);
     if (sessionDetailModal) {
          sessionDetailModal.addEventListener('click', (event) => {
             if (event.target === sessionDetailModal) {
-                if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
-                currentOpenSessionId = null;
-                window.currentDashboardSessionData = null;
+                closeSessionReader();
             }
         });
     }
+
+    document.addEventListener('keydown', event => {
+        if (sessionDetailModal?.dataset.visible !== 'true') return;
+        // Higher dialogs own keyboard input while studying cards or confirming deletion.
+        const studyingCards = document.getElementById('flashcardStudyModal-modal')?.dataset.visible === 'true';
+        const confirmingDelete = customConfirmModal?.dataset.visible === 'true';
+        if (studyingCards || confirmingDelete) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (studyingCards) document.getElementById('closeFlashcardModalBtn-modal')?.click();
+                else customConfirmModalNo?.click();
+            }
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeSessionReader();
+        } else if (event.key === 'Tab') {
+            const controls = [...sessionDetailModal.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')]
+                .filter(element => !element.disabled && element.getClientRects().length);
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+    }, true);
     
      const closeFlashcardStudyModalBtnModal = document.getElementById('closeFlashcardModalBtn-modal');
      if(closeFlashcardStudyModalBtnModal) {
@@ -444,6 +481,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (regenerateButton) {
         regenerateButton.addEventListener('click', () => {
             if(regenerateOptionsDiv) regenerateOptionsDiv.classList.toggle('hidden');
+            const expanded = Boolean(regenerateOptionsDiv && !regenerateOptionsDiv.classList.contains('hidden'));
+            regenerateButton.setAttribute('aria-expanded', String(expanded));
+            if (expanded && sessionReaderContent) sessionReaderContent.scrollTop = 0;
             if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
             const summaryCheckbox = document.querySelector('input[name="regenOutputFormat"][value="summary"]');
             if (summaryCheckbox && !summaryCheckbox.checked && modalSummaryRegenOptionsDiv) {
