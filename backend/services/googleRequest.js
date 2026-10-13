@@ -1,4 +1,5 @@
 const nodeFetch = require('node-fetch');
+const { setTimeout: pause } = require('node:timers/promises');
 
 function estimateInputTokens(payload) {
   // Conservative text estimate, reconciled with Google's promptTokenCount on
@@ -20,7 +21,7 @@ function quotaError(waitMs, { daily = false, inputTokens = false, limit } = {}) 
 
 function createGoogleRequester({
   fetch = nodeFetch,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  sleep = (ms, signal) => pause(ms, undefined, { signal }),
   now = Date.now,
   random = Math.random,
   log = record => console.info('[google-ai]', JSON.stringify(record)),
@@ -29,33 +30,50 @@ function createGoogleRequester({
   primaryTimeoutMs = Math.max(1000, Number(process.env.GOOGLE_FREE_PRIMARY_TIMEOUT_MS || 25000)),
   cooldownMs = Math.max(1000, Number(process.env.GOOGLE_FREE_FALLBACK_COOLDOWN_MS || 300000)),
   retries = 2,
+  maxQueued = 24,
+  getSignal = () => undefined,
+  beforeRequest = async () => null,
+  afterResponse = async () => {},
+  onProviderStart = () => {},
+  onUnusedReservation = async () => {},
 } = {}) {
   const unavailableUntil = new Map();
   const tokenWindows = new Map();
   const quotaPauses = new Map();
   let nextFreeStart = 0;
-  let active = 0;
-  const waiting = [];
-  function release() {
-    if (waiting.length) {
-      const ticket = waiting.shift();
+  const groups = { free: { active: 0, waiting: [], limit: 2 }, premium: { active: 0, waiting: [], limit: 4 } };
+  function release(group) {
+    if (group.waiting.length) {
+      const ticket = group.waiting.shift();
       clearTimeout(ticket.timer);
-      ticket.resolve(release);
-    } else active -= 1;
+      ticket.cleanup();
+      ticket.resolve(() => release(group));
+    } else group.active -= 1;
   }
-  function acquire(deadline) {
-    if (active < 2) { active += 1; return Promise.resolve(release); }
+  function acquire(deadline, premium, signal) {
+    const group = premium ? groups.premium : groups.free;
+    if (signal?.aborted) return Promise.reject(Object.assign(new Error('Request cancelled.'), { statusCode: 499 }));
+    if (group.active < group.limit) { group.active += 1; return Promise.resolve(() => release(group)); }
+    if (groups.free.waiting.length + groups.premium.waiting.length >= maxQueued) return Promise.reject(Object.assign(new Error('AI is busy. Try again shortly.'), { statusCode: 503 }));
     return new Promise((resolve, reject) => {
-      const ticket = { resolve };
+      const cancel = () => finish(Object.assign(new Error('Request cancelled.'), { statusCode: 499 }));
+      const ticket = { resolve, cleanup: () => signal?.removeEventListener('abort', cancel) };
+      function finish(error) {
+        const index = group.waiting.indexOf(ticket);
+        if (index === -1) return;
+        group.waiting.splice(index, 1);
+        clearTimeout(ticket.timer);
+        ticket.cleanup();
+        reject(error);
+      }
       ticket.timer = setTimeout(() => {
-        const index = waiting.indexOf(ticket);
-        if (index !== -1) waiting.splice(index, 1);
-        reject(Object.assign(new Error('AI queue took too long. Try again shortly.'), { statusCode: 504 }));
+        finish(Object.assign(new Error('AI queue took too long. Try again shortly.'), { statusCode: 504 }));
       }, Math.max(1, deadline - now()));
-      waiting.push(ticket);
+      group.waiting.push(ticket);
+      signal?.addEventListener('abort', cancel, { once: true });
     });
   }
-  return async function request(payload, { apiKey, modelName, premium = false, timeoutMs = 90000, fallbackModelName } = {}) {
+  return async function request(payload, { apiKey, modelName, premium = false, timeoutMs = 90000, fallbackModelName, signal = getSignal() } = {}) {
     const deadline = now() + timeoutMs;
     let currentModel = modelName;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -63,10 +81,12 @@ function createGoogleRequester({
       let timer;
       let providerStarted;
       let reservation;
+      let usageReservation;
+      let dispatched = false;
       const started = now();
       try {
+        unlock = await acquire(deadline, premium, signal);
         if (!premium) {
-          unlock = await acquire(deadline);
           const estimated = estimateInputTokens(payload);
           // Recheck all gates after every sleep: another request may discover a
           // quota cooldown while this one is already waiting to start.
@@ -90,7 +110,8 @@ function createGoogleRequester({
               if (quotaWait) throw quotaError(quotaWait, { ...pause, inputTokens: tokenWait > 0 || pause?.inputTokens });
               throw Object.assign(new Error('AI queue took too long. Try again shortly.'), { statusCode: 504 });
             }
-            if (wait) { await sleep(wait); continue; }
+            if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
+            if (wait) { await sleep(wait, signal); continue; }
             // A single large estimated request is allowed through an empty
             // window. The estimate is a pacing aid, not Google's tokenizer.
             reservation = { at: now(), tokens: estimated };
@@ -99,17 +120,21 @@ function createGoogleRequester({
             break;
           }
         }
+        usageReservation = await beforeRequest(payload, { premium, modelName: currentModel });
+        if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
         const remaining = deadline - now();
         if (remaining <= 0) throw Object.assign(new Error('The AI took too long to respond.'), { statusCode: 504 });
         const controller = new AbortController();
         const limit = !premium && fallbackModelName && currentModel === modelName ? Math.min(remaining, primaryTimeoutMs) : remaining;
         timer = setTimeout(() => controller.abort(), limit);
         providerStarted = now();
+        onProviderStart(usageReservation);
+        dispatched = true;
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify(payload),
-          signal: controller.signal,
+          signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
         });
         const data = await response.json().catch(() => ({}));
         const inputTokens = Number(data.usageMetadata?.promptTokenCount || data.usage_metadata?.prompt_token_count || 0);
@@ -145,8 +170,12 @@ function createGoogleRequester({
           }
           throw error;
         }
+        // Keep the conservative reservation if reconciliation is temporarily
+        // unavailable; never repeat a successful provider call for a DB error.
+        try { await afterResponse(usageReservation, data); } catch (_error) { /* keep conservative reservation */ }
         return { data, modelName: currentModel };
       } catch (error) {
+        if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
         if (error.name === 'AbortError') {
           error = Object.assign(new Error('The AI took too long to respond. Try a shorter document or fewer questions.'), { statusCode: 504, timedOut: true });
           log({ model: currentModel, status: 'timeout', attempt: attempt + 1, elapsedMs: now() - started, queueMs: providerStarted - started, providerMs: now() - providerStarted });
@@ -162,8 +191,19 @@ function createGoogleRequester({
         if (!transient || attempt >= retries || now() + delay >= deadline) throw error;
         if (timer) { clearTimeout(timer); timer = null; }
         if (unlock) { unlock(); unlock = null; }
-        await sleep(delay);
+        await sleep(delay, signal).catch(error => {
+          if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
+          throw error;
+        });
       } finally {
+        if (!dispatched) {
+          try { await onUnusedReservation(usageReservation); } catch (_error) { /* fail closed if refund is unavailable */ }
+          if (reservation) {
+            const window = tokenWindows.get(currentModel) || [];
+            const index = window.indexOf(reservation);
+            if (index !== -1) window.splice(index, 1);
+          }
+        }
         if (timer) clearTimeout(timer);
         if (unlock) unlock();
       }
@@ -171,4 +211,4 @@ function createGoogleRequester({
   };
 }
 
-module.exports = { createGoogleRequester };
+module.exports = { createGoogleRequester, estimateInputTokens };

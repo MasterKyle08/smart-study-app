@@ -59,7 +59,7 @@ function asStringArray(value) {
       .filter(Boolean);
   }
   if (typeof value === 'string' && value.trim()) {
-    return value.split(/\s*(?:,|;|\||\/)\s*/).map((item) => item.trim()).filter(Boolean);
+    return value.split(/[,;|/]/).map((item) => item.trim()).filter(Boolean);
   }
   return [];
 }
@@ -75,6 +75,17 @@ function normalizeFlashcards(raw) {
       return { term, definition };
     })
     .filter(Boolean);
+}
+
+function selectAnswers(value, options = []) {
+  if (Array.isArray(value)) return asStringArray(value);
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  if (options.includes(raw)) return [raw];
+  const piped = raw.split('|').map(item => item.trim()).filter(Boolean);
+  if (piped.length > 1) return piped;
+  const legacy = raw.split(/[,;]/).map(item => item.trim()).filter(Boolean);
+  return legacy.length > 1 && legacy.every(item => options.includes(item)) ? legacy : [raw];
 }
 
 function normalizeQuestionType(value) {
@@ -101,7 +112,7 @@ function normalizeQuizQuestions(raw, fallbackType = 'multiple_choice') {
       if (correctAnswer == null) correctAnswer = question.answer;
 
       if (questionType === 'select_all') {
-        correctAnswer = asStringArray(correctAnswer);
+        correctAnswer = selectAnswers(correctAnswer, options);
         if (correctAnswer.length === 0) return null;
         options = Array.from(new Set([...options, ...correctAnswer]));
       } else if (questionType === 'short_answer' || questionType === 'worked_problem' || questionType === 'coding_trace' || questionType === 'numeric') {
@@ -137,8 +148,8 @@ function normalizeQuizQuestions(raw, fallbackType = 'multiple_choice') {
 function scoreLocally(question, userAnswer) {
   const type = normalizeQuestionType(question.questionType);
   if (type === 'select_all') {
-    const correct = asStringArray(question.correctAnswer).map((item) => item.toLowerCase());
-    const given = asStringArray(userAnswer).map((item) => item.toLowerCase());
+    const correct = selectAnswers(question.correctAnswer, question.options || []).map((item) => item.toLowerCase());
+    const given = selectAnswers(userAnswer, question.options || []).map((item) => item.toLowerCase());
     const correctSet = new Set(correct);
     const givenSet = new Set(given);
     const matched = correct.filter((item) => givenSet.has(item)).length;
@@ -153,8 +164,12 @@ function scoreLocally(question, userAnswer) {
   }
 
   if (type === 'numeric') {
-    const expected = Number(String(question.correctAnswer).replace(/[^0-9eE.+-]/g, ''));
-    const given = Number(String(userAnswer).replace(/[^0-9eE.+-]/g, ''));
+    const parseNumber = value => {
+      const raw = String(value ?? '').trim().replace(/,/g, '');
+      return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw) ? Number(raw) : NaN;
+    };
+    const expected = parseNumber(question.correctAnswer);
+    const given = parseNumber(userAnswer);
     const tolerance = Number(question.numericTolerance);
     const allowed = Number.isFinite(tolerance) ? Math.abs(tolerance) : 0.01;
     if (!Number.isFinite(expected) || !Number.isFinite(given)) {

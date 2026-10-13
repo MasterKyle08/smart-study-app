@@ -33,6 +33,8 @@ app.get('/health', (req, res) => {
 
 app.use(require('cors')({ origin: true, credentials: true }));
 app.use(cookieParser());
+// Reject abusive API traffic before allocating and parsing request bodies.
+app.use('/api/', rateLimitMiddleware);
 app.use('/api/billing/webhook/stripe', express.raw({ type: 'application/json' }));
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/billing/webhook/stripe') return next();
@@ -45,7 +47,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Rate limiting must be registered before the API routers it is meant to protect.
-app.use('/api/', rateLimitMiddleware);
 
 // --- API Routes ---
 app.use('/api/auth', authRoutes);

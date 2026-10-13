@@ -13,13 +13,13 @@ const {
 } = require('../utils/adminRules');
 const otp = require('../utils/otpCrypto');
 
-test('owner email is treated as admin', () => {
+test('a configured owner email alone does not grant admin privileges', () => {
   const prev = process.env.ADMIN_EMAIL;
   process.env.ADMIN_EMAIL = 'owner@example.com';
   assert.equal(isOwnerEmail('owner@example.com'), true);
   assert.equal(isOwnerEmail('OWNER@example.com'), true);
   assert.equal(isOwnerEmail('other@example.com'), false);
-  assert.equal(isAdminUser({ email: 'owner@example.com', role: 'user' }), true);
+  assert.equal(isAdminUser({ email: 'owner@example.com', role: 'user' }), false);
   assert.equal(isAdminUser({ email: 'staff@example.com', role: 'admin' }), true);
   assert.equal(isAdminUser({ email: 'staff@example.com', role: 'user' }), false);
   process.env.ADMIN_EMAIL = prev;
@@ -35,7 +35,7 @@ test('phone normalization and masking', () => {
 
 test('cannot demote owner, self, or last admin', () => {
   const actor = { id: 1, email: 'a@x.com', role: 'admin' };
-  const owner = { id: 2, email: 'owner@example.com', role: 'admin' };
+  const owner = { id: 2, email: 'owner@example.com', role: 'admin', is_owner: 1 };
   const other = { id: 3, email: 'b@x.com', role: 'admin' };
   const prev = process.env.ADMIN_EMAIL;
   process.env.ADMIN_EMAIL = 'owner@example.com';
@@ -54,7 +54,7 @@ test('cannot delete self, owner, or last admin', () => {
   const prev = process.env.ADMIN_EMAIL;
   process.env.ADMIN_EMAIL = 'owner@example.com';
   assert.equal(canDeleteUser({ actor, target: actor, adminCount: 5 }).ok, false);
-  assert.equal(canDeleteUser({ actor, target: { id: 9, email: 'owner@example.com', role: 'admin' }, adminCount: 5 }).ok, false);
+  assert.equal(canDeleteUser({ actor, target: { id: 9, email: 'owner@example.com', role: 'admin', is_owner: 1 }, adminCount: 5 }).ok, false);
   assert.equal(canDeleteUser({ actor, target: { id: 4, email: 'c@x.com', role: 'admin' }, adminCount: 1 }).ok, false);
   assert.equal(canDeleteUser({ actor, target: { id: 4, email: 'c@x.com', role: 'user' }, adminCount: 1 }).ok, true);
   process.env.ADMIN_EMAIL = prev;
@@ -65,7 +65,7 @@ test('cannot ban self or owner', () => {
   const prev = process.env.ADMIN_EMAIL;
   process.env.ADMIN_EMAIL = 'owner@example.com';
   assert.equal(canBanUser({ actor, target: actor }).ok, false);
-  assert.equal(canBanUser({ actor, target: { id: 2, email: 'owner@example.com' } }).ok, false);
+  assert.equal(canBanUser({ actor, target: { id: 2, email: 'owner@example.com', role: 'admin', is_owner: 1 } }).ok, false);
   assert.equal(canBanUser({ actor, target: { id: 3, email: 'user@example.com' } }).ok, true);
   process.env.ADMIN_EMAIL = prev;
 });

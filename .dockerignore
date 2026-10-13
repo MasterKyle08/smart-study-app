@@ -4,6 +4,8 @@
 !package-lock.json
 !server.js
 !tailwind.config.js
+!scripts/
+!scripts/**
 !backend/
 !backend/**
 !public/

@@ -28,6 +28,7 @@ router.post('/register', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
+    if (typeof password !== 'string' || Buffer.byteLength(password) > 72) return res.status(400).json({ message: 'Password must be text of at most 72 bytes.' });
     // Add more validation for email format and password strength if needed
     if (password.length < 6) {
         return res.status(400).json({ message: 'Password must be at least 6 characters long.' });

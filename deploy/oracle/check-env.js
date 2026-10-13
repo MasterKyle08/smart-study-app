@@ -26,4 +26,14 @@ if (!emailReady && !smsReady) {
   console.warn('Admin verification needs SMTP/Resend email or configured Twilio SMS with a verified user phone.');
 }
 if (!process.env.ADMIN_EMAIL) console.warn('Set ADMIN_EMAIL to your owner account email to enable owner admin access.');
-console.log('Required deployment configuration is present.');
+async function preflightDatabase() {
+  const { db, close, checkIdentityConflicts, checkReviewConflicts } = require('../../backend/models/db');
+  try {
+    const tables = await db.execute("SELECT name FROM sqlite_master WHERE type = 'table'");
+    const names = new Set(tables.rows.map(row => row.name));
+    if (names.has('Users')) await checkIdentityConflicts();
+    if (names.has('FlashcardReviews')) await checkReviewConflicts();
+    console.log('Configuration and read-only database preflight passed.');
+  } finally { await close(); }
+}
+preflightDatabase().catch(error => { console.error(`Database preflight failed: ${error.message}`); process.exitCode = 1; });

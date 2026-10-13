@@ -4,6 +4,7 @@
  */
 
 const { db } = require('./db');
+const { normalizeQuizOptions } = require('../utils/quizOptions');
 
 class PremadeQuiz {
   static #formatRow(row, { includeQuiz = false } = {}) {
@@ -22,7 +23,7 @@ class PremadeQuiz {
     let quizOptions = null;
     if (row.quiz_options) {
       try {
-        quizOptions = JSON.parse(row.quiz_options);
+        quizOptions = normalizeQuizOptions(JSON.parse(row.quiz_options));
       } catch (error) {
         console.warn('Failed to parse premade quiz options JSON.', error.message);
       }
@@ -55,7 +56,7 @@ class PremadeQuiz {
     };
   }
 
-  static async create({ userId, title, slug, description, topic, tags, sourceText, quizJson, quizOptions, isPublic = true }) {
+  static async create({ userId, title, slug, description, topic, tags, sourceText, quizJson, quizOptions, isPublic = false }) {
     const sql = `
       INSERT INTO PremadeQuizzes (user_id, title, slug, description, topic, tags, source_text, quiz_json, quiz_options, is_public)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

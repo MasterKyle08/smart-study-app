@@ -88,10 +88,12 @@ async function addColumnIfMissing(sql, label) {
   try {
     await db.execute(sql);
     console.log(`${label} column added.`);
+    return true;
   } catch (alterError) {
     const message = (alterError.message || '').toLowerCase();
     if (message.includes('duplicate column') || message.includes('already exists')) {
       console.log(`${label} column already present.`);
+      return false;
     } else {
       throw alterError;
     }
@@ -113,6 +115,7 @@ async function init() {
     console.log('Executing: Create Sessions Table IF NOT EXISTS');
     await db.execute(createSessionsTableSQL);
     console.log('Sessions table checked/created.');
+    await addColumnIfMissing('ALTER TABLE Sessions ADD COLUMN quiz_options TEXT', 'Sessions.quiz_options');
 
     console.log('Executing: Create Session Update Trigger IF NOT EXISTS');
     await db.execute(createSessionUpdateTriggerSQL);
@@ -129,7 +132,9 @@ async function init() {
     await addColumnIfMissing("ALTER TABLE Users ADD COLUMN plan TEXT DEFAULT 'free'", 'Users.plan');
     await addColumnIfMissing("ALTER TABLE Users ADD COLUMN stripe_customer_id TEXT", 'Users.stripe_customer_id');
     await addColumnIfMissing("ALTER TABLE Users ADD COLUMN billing_provider TEXT", 'Users.billing_provider');
+    await addColumnIfMissing('ALTER TABLE Users ADD COLUMN premium_until INTEGER', 'Users.premium_until');
     await addColumnIfMissing("ALTER TABLE Users ADD COLUMN role TEXT DEFAULT 'user'", 'Users.role');
+    await addColumnIfMissing('ALTER TABLE Users ADD COLUMN is_owner INTEGER DEFAULT 0', 'Users.is_owner');
     await addColumnIfMissing('ALTER TABLE Users ADD COLUMN is_banned INTEGER DEFAULT 0', 'Users.is_banned');
     await addColumnIfMissing('ALTER TABLE Users ADD COLUMN banned_at TEXT', 'Users.banned_at');
     await addColumnIfMissing('ALTER TABLE Users ADD COLUMN ban_reason TEXT', 'Users.ban_reason');
@@ -166,18 +171,21 @@ async function init() {
     );`);
     console.log('AdminAuditLog table checked/created.');
 
-    try {
+    await checkIdentityConflicts();
+    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email_identity ON Users (LOWER(TRIM(email)))');
+    await db.execute('CREATE TABLE IF NOT EXISTS SchemaMigrations (id TEXT PRIMARY KEY)');
+    const ownerMigration = await db.execute("SELECT id FROM SchemaMigrations WHERE id = 'stored-owner-v1'");
+    if (!ownerMigration.rows.length) {
       const { ownerEmails } = require('../utils/adminRules');
       const emails = ownerEmails();
       for (const email of emails) {
         await db.execute({
-          sql: "UPDATE Users SET role = 'admin' WHERE LOWER(email) = ?",
+          sql: "UPDATE Users SET is_owner = 1 WHERE LOWER(role) = 'admin' AND LOWER(TRIM(email)) = ?",
           args: [email],
         });
       }
-      if (emails.length) console.log(`Owner admin role seeded for ${emails.length} email(s).`);
-    } catch (seedError) {
-      console.warn('Owner admin seed skipped:', seedError.message);
+      if (emails.length) console.log('Existing trusted owner flags migrated; no new admin roles were granted.');
+      await db.execute("INSERT INTO SchemaMigrations (id) VALUES ('stored-owner-v1')");
     }
 
     await db.execute(`CREATE TABLE IF NOT EXISTS AiUsageDaily (
@@ -195,6 +203,11 @@ async function init() {
     );`);
     console.log('AiUsageDaily table checked/created.');
     await addColumnIfMissing('ALTER TABLE AiUsageDaily ADD COLUMN bonus_jobs INTEGER DEFAULT 0', 'AiUsageDaily.bonus_jobs');
+    await addColumnIfMissing('ALTER TABLE AiUsageDaily ADD COLUMN request_attempts INTEGER DEFAULT 0', 'AiUsageDaily.request_attempts');
+    await addColumnIfMissing('ALTER TABLE AiUsageDaily ADD COLUMN reserved_tokens INTEGER DEFAULT 0', 'AiUsageDaily.reserved_tokens');
+    await addColumnIfMissing('ALTER TABLE AiUsageDaily ADD COLUMN budget_epoch INTEGER DEFAULT 0', 'AiUsageDaily.budget_epoch');
+    await db.execute('CREATE TABLE IF NOT EXISTS AiPoolDaily (usage_date TEXT PRIMARY KEY, free_attempts INTEGER DEFAULT 0)');
+    await db.execute('INSERT OR IGNORE INTO AiPoolDaily (usage_date, free_attempts) SELECT usage_date, SUM(gemma_requests) FROM AiUsageDaily GROUP BY usage_date');
 
     await db.execute(`CREATE TABLE IF NOT EXISTS FlashcardReviews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,6 +225,26 @@ async function init() {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );`);
     console.log('FlashcardReviews table checked/created.');
+    await checkReviewConflicts();
+    for (const sql of [
+      'CREATE INDEX IF NOT EXISTS sessions_user_created ON Sessions (user_id, id DESC)',
+      'CREATE INDEX IF NOT EXISTS quizzes_user_updated ON PremadeQuizzes (user_id, updated_at DESC)',
+      'CREATE INDEX IF NOT EXISTS quizzes_public_created ON PremadeQuizzes (is_public, created_at DESC)',
+      'CREATE INDEX IF NOT EXISTS otp_user_purpose ON AdminOtps (user_id, purpose, id DESC)',
+      'CREATE INDEX IF NOT EXISTS reviews_user_due ON FlashcardReviews (user_id, due_at)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS reviews_card_identity ON FlashcardReviews (user_id, COALESCE(session_id, 0), card_key)',
+    ]) await db.execute(sql);
+    await db.execute(`CREATE TABLE IF NOT EXISTS BillingCheckouts (
+      id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, customer_id TEXT, subscription_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+    )`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS BillingSubscriptions (
+      id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, customer_id TEXT NOT NULL, status TEXT NOT NULL,
+      entitled INTEGER DEFAULT 0, entitled_until INTEGER DEFAULT 0, event_created INTEGER DEFAULT 0, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+    )`);
+    await db.execute('CREATE INDEX IF NOT EXISTS billing_subscription_user ON BillingSubscriptions (user_id, entitled)');
+    await db.execute('CREATE TABLE IF NOT EXISTS BillingEvents (id TEXT PRIMARY KEY, created INTEGER NOT NULL, processed_at TEXT DEFAULT CURRENT_TIMESTAMP)');
     
     console.log('Database schema initialization statements executed with Turso.');
   } catch (error) {
@@ -234,6 +267,16 @@ async function init() {
 /**
  * Closes the database connection.
  */
+async function checkIdentityConflicts(client = db) {
+  const conflicts = await client.execute('SELECT COUNT(*) AS c FROM (SELECT LOWER(TRIM(email)) FROM Users GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1)');
+  if (Number(conflicts.rows[0].c)) throw new Error('Email identity conflicts must be reviewed before upgrading. Accounts were not merged or deleted. See SECURITY-UPGRADE.md.');
+}
+
+async function checkReviewConflicts(client = db) {
+  const conflicts = await client.execute('SELECT COUNT(*) AS c FROM (SELECT user_id, COALESCE(session_id, 0), card_key FROM FlashcardReviews GROUP BY user_id, COALESCE(session_id, 0), card_key HAVING COUNT(*) > 1)');
+  if (Number(conflicts.rows[0].c)) throw new Error('Duplicate flashcard reviews must be reviewed before upgrading. No records were deleted. See SECURITY-UPGRADE.md.');
+}
+
 async function close() {
   try {
     db.close(); // client.close() is synchronous for the http client
@@ -262,4 +305,6 @@ module.exports = {
   db,
   init,
   close,
+  checkIdentityConflicts,
+  checkReviewConflicts,
 };

@@ -1,0 +1,10 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const source = path.dirname(require.resolve('pdfjs-dist/package.json'));
+const target = path.join(root, 'public/vendor/pdfjs');
+fs.mkdirSync(target, { recursive: true });
+for (const file of ['pdf.mjs', 'pdf.worker.mjs']) fs.copyFileSync(path.join(source, 'build', file), path.join(target, file));
+for (const directory of ['cmaps', 'standard_fonts', 'wasm']) fs.cpSync(path.join(source, directory), path.join(target, directory), { recursive: true });
+fs.copyFileSync(path.join(source, 'LICENSE'), path.join(target, 'LICENSE'));
+console.log('Patched PDF reader assets prepared locally.');

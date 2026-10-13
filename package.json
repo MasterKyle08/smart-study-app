@@ -4,10 +4,13 @@
   "description": "Smart study web application for students.",
   "main": "server.js",
   "scripts": {
+    "postinstall": "node scripts/build-vendor.js",
+    "vendor:build": "node scripts/build-vendor.js",
+    "pretest": "npm run vendor:build",
     "start": "node server.js",
     "dev": "concurrently \"nodemon server.js\" \"npm run tailwind:watch\"",
     "init-db": "node ./backend/models/db.js init",
-    "test": "node --test ./backend/tests/studyContent.test.js ./backend/tests/admin.test.js ./backend/tests/aiRequests.test.js ./backend/tests/environment.test.js",
+    "test": "node --test ./backend/tests/studyContent.test.js ./backend/tests/admin.test.js ./backend/tests/aiRequests.test.js ./backend/tests/environment.test.js ./backend/tests/security.test.js",
     "test:oracle": "node --test ./backend/tests/oracle.test.js",
     "test:ui": "playwright test",
     "tailwind:build": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css",
@@ -44,6 +47,7 @@
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
     "nodemon": "^3.0.2",
+    "pdfjs-dist": "^6.4.299",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3"
   },

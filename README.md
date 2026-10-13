@@ -37,6 +37,8 @@ Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/s
 
 ## Local setup (new laptop)
 
+See [the security upgrade guide](SECURITY-UPGRADE.md) before deploying the prepared account, quota, privacy, billing, and PDF changes. It explains database preflight, owner/admin verification, new budgets, and provider setup.
+
 See [local development and review](LOCAL-DEVELOPMENT.md) for real free Gemma testing on localhost, dummy-user/shared-Turso limits, browser checks, and the review-before-push process. Coding agents must follow [AGENTS.md](AGENTS.md).
 
 For Oracle Cloud Ampere A1 on Ubuntu 26.04, follow the [Oracle hosting guide](deploy/oracle/README.md). It uses the prepared ZIP uploaded through FileZilla, a persistent `screen -S website` terminal for extraction/setup, Docker, and automatic HTTPS.

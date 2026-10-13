@@ -43,8 +43,8 @@ jobs:
         run: |
           set -euo pipefail
           git archive --format=tar.gz --output="$RUNNER_TEMP/oracle-release.tar.gz" "$GITHUB_SHA" \
-            Dockerfile compose.yml .dockerignore package.json package-lock.json server.js tailwind.config.js \
-            backend public deploy
+            Dockerfile compose.yml .dockerignore package.json package-lock.json server.js tailwind.config.js SECURITY-UPGRADE.md \
+            backend public deploy scripts
           if tar -tzf "$RUNNER_TEMP/oracle-release.tar.gz" | grep -Ei '(^|/)(\.env($|\.)|node_modules/|.*service-account.*\.json$|gcp-key\.json$)|\.(ppk|pem|key|sqlite)(-|$)'; then
             echo 'The release contains a private configuration/key/database file.' >&2
             exit 1

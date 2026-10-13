@@ -9,6 +9,15 @@ const { db } = require('./db'); // Import the Turso client instance
  * Represents a Study Session.
  */
 class Session {
+  static async listSummaries(userId, { before, limit = 24 } = {}) {
+    const take = Math.min(50, Math.max(1, Math.floor(Number(limit) || 24)));
+    const cursor = before == null ? null : Number(before);
+    if (cursor !== null && (!Number.isSafeInteger(cursor) || cursor < 1)) throw Object.assign(new Error('Invalid page cursor.'), { statusCode: 400 });
+    const result = await db.execute({ sql: `SELECT id, original_filename, original_content_type, created_at, updated_at, SUBSTR(summary, 1, 160) AS summary FROM Sessions WHERE user_id = ?${cursor === null ? '' : ' AND id < ?'} ORDER BY id DESC LIMIT ?`, args: [userId, ...(cursor === null ? [] : [cursor]), take + 1] });
+    const more = result.rows.length > take;
+    const sessions = result.rows.slice(0, take).map(row => ({ ...row, id: Number(row.id) }));
+    return { sessions, nextCursor: more ? sessions[sessions.length - 1].id : null };
+  }
   /**
    * Creates a new study session.
    * @param {object} sessionData - Data for the new session.
@@ -22,13 +31,13 @@ class Session {
    * @returns {Promise<object>} A promise that resolves with the new session object.
    * @throws {Error} If an error occurs during database operation.
    */
-  static async create({ userId, originalFilename, originalContentType, extractedText, summary = null, flashcards = null, quiz = null }) {
+  static async create({ userId, originalFilename, originalContentType, extractedText, summary = null, flashcards = null, quiz = null, quizOptions = null }) {
     const sql = `
       INSERT INTO Sessions 
-        (user_id, original_filename, original_content_type, extracted_text, summary, flashcards, quiz) 
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (user_id, original_filename, original_content_type, extracted_text, summary, flashcards, quiz, quiz_options)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const params = [userId, originalFilename, originalContentType, extractedText, summary, flashcards, quiz];
+    const params = [userId, originalFilename, originalContentType, extractedText, summary, flashcards, quiz, quizOptions ? JSON.stringify(quizOptions) : null];
     
     try {
       const result = await db.execute({ sql, args: params });
@@ -109,7 +118,7 @@ class Session {
    * @returns {Promise<object>} A promise that resolves with the updated session object.
    * @throws {Error} If no fields provided, session not found, or DB error.
    */
-  static async updateAiContent(id, { summary, flashcards, quiz }) {
+  static async updateAiContent(id, { summary, flashcards, quiz, quizOptions }) {
     const fieldsToUpdate = [];
     const params = [];
 
@@ -124,6 +133,10 @@ class Session {
     if (quiz !== undefined) {
       fieldsToUpdate.push('quiz = ?');
       params.push(quiz);
+    }
+    if (quizOptions !== undefined) {
+      fieldsToUpdate.push('quiz_options = ?');
+      params.push(JSON.stringify(quizOptions));
     }
 
     if (fieldsToUpdate.length === 0) {

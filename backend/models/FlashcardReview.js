@@ -1,6 +1,16 @@
 const { db } = require('./db');
+const { writeTransaction } = require('../utils/transaction');
+const { reviewCard } = require('../utils/srs');
 
 class FlashcardReview {
+  static async review({ userId, sessionId, cardKey, quality }) {
+    return writeTransaction(async tx => {
+      const current = await tx.execute({ sql: 'SELECT * FROM FlashcardReviews WHERE user_id = ? AND COALESCE(session_id, 0) = ? AND card_key = ?', args: [userId, sessionId || 0, cardKey] });
+      const next = reviewCard(this.format(current.rows[0]) || {}, quality);
+      const saved = await tx.execute({ sql: `INSERT INTO FlashcardReviews (user_id, session_id, card_key, term, repetitions, interval_days, ease_factor, due_at, last_quality, last_reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET term = excluded.term, repetitions = excluded.repetitions, interval_days = excluded.interval_days, ease_factor = excluded.ease_factor, due_at = excluded.due_at, last_quality = excluded.last_quality, last_reviewed_at = excluded.last_reviewed_at RETURNING *`, args: [userId, sessionId, cardKey, cardKey, next.repetitions, next.intervalDays, next.easeFactor, next.dueAt, next.lastQuality, next.lastReviewedAt] });
+      return this.format(saved.rows[0]);
+    });
+  }
   static format(row) {
     if (!row) return null;
     return {
@@ -19,45 +29,13 @@ class FlashcardReview {
   }
 
   static async upsert({ userId, sessionId, cardKey, term, review }) {
-    const existing = await this.findOne(userId, sessionId, cardKey);
-    if (!existing) {
-      const sql = `INSERT INTO FlashcardReviews
-        (user_id, session_id, card_key, term, repetitions, interval_days, ease_factor, due_at, last_quality, last_reviewed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-      await db.execute({
-        sql,
-        args: [
-          userId,
-          sessionId || null,
-          cardKey,
-          term || cardKey,
-          review.repetitions,
-          review.intervalDays,
-          review.easeFactor,
-          review.dueAt,
-          review.lastQuality,
-          review.lastReviewedAt,
-        ],
+    return writeTransaction(async tx => {
+      const saved = await tx.execute({
+        sql: 'INSERT INTO FlashcardReviews (user_id, session_id, card_key, term, repetitions, interval_days, ease_factor, due_at, last_quality, last_reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET term = excluded.term, repetitions = excluded.repetitions, interval_days = excluded.interval_days, ease_factor = excluded.ease_factor, due_at = excluded.due_at, last_quality = excluded.last_quality, last_reviewed_at = excluded.last_reviewed_at RETURNING *',
+        args: [userId, sessionId || null, cardKey, term || cardKey, review.repetitions, review.intervalDays, review.easeFactor, review.dueAt, review.lastQuality, review.lastReviewedAt],
       });
-      return this.findOne(userId, sessionId, cardKey);
-    }
-
-    await db.execute({
-      sql: `UPDATE FlashcardReviews
-        SET repetitions = ?, interval_days = ?, ease_factor = ?, due_at = ?, last_quality = ?, last_reviewed_at = ?, term = ?
-        WHERE id = ?`,
-      args: [
-        review.repetitions,
-        review.intervalDays,
-        review.easeFactor,
-        review.dueAt,
-        review.lastQuality,
-        review.lastReviewedAt,
-        term || existing.term,
-        existing.id,
-      ],
+      return this.format(saved.rows[0]);
     });
-    return this.findOne(userId, sessionId, cardKey);
   }
 
   static async findOne(userId, sessionId, cardKey) {
@@ -77,7 +55,7 @@ class FlashcardReview {
       args.push(sessionId);
     }
     if (!includeUpcoming) {
-      sql += ` AND due_at <= datetime('now')`;
+      sql += ` AND due_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
     }
     sql += ' ORDER BY due_at ASC';
     const result = await db.execute({ sql, args });

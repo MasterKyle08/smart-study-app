@@ -30,7 +30,9 @@ async function request(endpoint, method, body = null, requiresAuth = false) {
     
     if (!response.ok) {
       const message = responseData.message || `Request failed with status ${response.status}`;
-      if ((response.status === 401 || response.status === 403) && requiresAuth) {
+      const stepUpRequired = response.status === 401 && responseData.code === 'ADMIN_STEP_UP_REQUIRED';
+      if (stepUpRequired) window.dispatchEvent(new CustomEvent('adminSessionExpired'));
+      if ((response.status === 401 || response.status === 403) && requiresAuth && !stepUpRequired) {
         localStorage.removeItem('userEmail');
         if (typeof window !== 'undefined' && typeof window.updateNav === 'function') {
           window.updateNav(false);
@@ -96,7 +98,7 @@ const apiProcessContent = (
 };
 
 // --- Session Management ---
-const apiGetUserSessions = () => request('/study/sessions', 'GET', null, true);
+const apiGetUserSessions = (before = null) => request(`/study/sessions${before ? `?before=${encodeURIComponent(before)}` : ''}`, 'GET', null, true);
 const apiGetSessionDetails = (sessionId) => request(`/study/sessions/${sessionId}`, 'GET', null, true);
 
 const apiRegenerateSessionContent = (

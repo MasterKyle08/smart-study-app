@@ -1,5 +1,6 @@
 const Session = require('../models/Session');
 const aiService = require('./ai');
+const { selectSource } = require('../utils/source');
 
 async function processUploadedText({
   extractedText,
@@ -14,6 +15,7 @@ async function processUploadedText({
   summaryNegativeKeywords = [],
   quizOptions,
   premium = false,
+  signal,
 }) {
   if (!extractedText || extractedText.trim() === '') {
     const error = new Error('Extracted text cannot be empty.');
@@ -125,6 +127,9 @@ async function processUploadedText({
     }
   }
   await Promise.all([worker(), worker()]);
+  if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
+  const coverage = selectSource(extractedText, premium ? 40000 : 14000).warning;
+  if (coverage) results.warnings.push(coverage);
 
   if (!generatedSummary && !generatedFlashcards && !generatedQuiz) {
     const error = new Error(results.warnings.join(' ') || 'Failed to generate any study materials.');
@@ -143,6 +148,7 @@ async function processUploadedText({
   }
 
   try {
+    if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
     const newSession = await Session.create({
       userId,
       originalFilename,
@@ -151,10 +157,12 @@ async function processUploadedText({
       summary: generatedSummary,
       flashcards: generatedFlashcards ? JSON.stringify(generatedFlashcards) : null,
       quiz: generatedQuiz ? JSON.stringify(generatedQuiz) : null,
+      quizOptions,
     });
     results.sessionId = newSession.id;
     results.savedToAccount = true;
   } catch (dbError) {
+    if (dbError.statusCode === 499) throw dbError;
     console.error('[fileService] Error saving session to database:', dbError.message);
     results.sessionId = null;
     results.savedToAccount = false;

@@ -110,8 +110,12 @@
                         <div>
                             <label for="premadeSourceText" class="block text-sm font-medium text-slate-700 mb-1">Reference Material (optional)</label>
                             <textarea id="premadeSourceText" name="premadeSourceText" rows="4" class="form-textarea w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="Paste policy notes or a short knowledge base excerpt to anchor the quiz."></textarea>
-                            <p class="text-xs text-slate-500 mt-1">Tip: Provide 2-4 concise paragraphs. The AI will build questions just from this context.</p>
+                            <p class="text-xs text-slate-500 mt-1">Public quiz links do not include the reference text. Generated questions may quote it, so review your quiz before publishing.</p>
                         </div>
+                        <label class="flex items-start gap-2 text-sm text-slate-700">
+                            <input type="checkbox" id="premadePublic" name="premadePublic" class="form-checkbox mt-1 h-4 w-4 text-teal-600 rounded">
+                            <span>Make this quiz public. Anyone can view its title, description, tags, questions, and answers. Leave unchecked to keep the quiz private.</span>
+                        </label>
                         <div>
                             <label for="premadeTags" class="block text-sm font-medium text-slate-700 mb-1">Tags (optional)</label>
                             <input type="text" id="premadeTags" name="premadeTags" class="form-input w-full rounded-lg border-slate-300 focus:ring-teal-500 focus:border-teal-500 text-sm" placeholder="safety, onboarding, compliance">

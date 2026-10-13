@@ -6,6 +6,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { normalizeEmail, reservedEmail } = require('../utils/identity');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
@@ -20,6 +21,7 @@ function premiumEmails() {
 function resolvePlan(user) {
   if (process.env.NODE_ENV !== 'production' && process.env.LOCAL_FREE_ONLY === '1') return 'free';
   if (!user) return 'free';
+  if (user.billing_provider === 'stripe' && Number(user.premium_until || 0) * 1000 <= Date.now()) return 'free';
   if (user.email && premiumEmails().includes(String(user.email).toLowerCase())) return 'premium';
   return user.plan === 'premium' ? 'premium' : 'free';
 }
@@ -48,6 +50,11 @@ if (!JWT_SECRET) {
  * @throws {Error} If email already exists or other registration error.
  */
 async function registerUser(email, password) {
+  email = normalizeEmail(email);
+  if (typeof password !== 'string' || password.length < 6 || Buffer.byteLength(password) > 72) throw Object.assign(new Error('Password must be text of 6 or more characters and at most 72 bytes.'), { statusCode: 400 });
+  if (reservedEmail(email)) {
+    throw Object.assign(new Error('This address is reserved. Sign in with the existing account or contact the site owner.'), { statusCode: 403 });
+  }
   // Validate email and password presence (basic)
   if (!email || !password) {
     throw new Error('Email and password are required.');
@@ -81,6 +88,8 @@ async function registerUser(email, password) {
  * @throws {Error} If invalid credentials or other login error.
  */
 async function loginUser(email, password) {
+  email = normalizeEmail(email);
+  if (typeof password !== 'string' || password.length > 1024) throw Object.assign(new Error('Invalid password input.'), { statusCode: 400 });
   if (!email || !password) {
     throw new Error('Email and password are required.');
   }

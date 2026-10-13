@@ -29,7 +29,7 @@ cleanup() {
 }
 trap cleanup EXIT
 tar -xzf "$archive" --no-same-owner -C "$stage"
-for directory in backend public deploy; do
+for directory in backend public deploy scripts; do
   if [[ ! -d "$stage/$directory" || -L "$stage/$directory" || -L "$project_dir/$directory" ]]; then
     echo "Invalid source directory: $directory" >&2
     exit 1
@@ -43,11 +43,11 @@ compose=(sudo -n docker compose)
 "${compose[@]}" build app
 "${compose[@]}" run --rm --no-deps app node deploy/oracle/check-env.js
 "${compose[@]}" run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-for directory in backend public deploy; do
+for directory in backend public deploy scripts; do
   mkdir -p "$project_dir/$directory"
   rsync -a --delete --exclude='.env' --exclude='.env.*' "$stage/$directory/" "$project_dir/$directory/"
 done
-for file in Dockerfile compose.yml .dockerignore package.json package-lock.json server.js tailwind.config.js; do
+for file in Dockerfile compose.yml .dockerignore package.json package-lock.json server.js tailwind.config.js SECURITY-UPGRADE.md; do
   test -f "$stage/$file"
   cp -- "$stage/$file" "$project_dir/$file"
 done

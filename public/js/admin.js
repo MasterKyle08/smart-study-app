@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedUserId = null;
 
   function showGateMsg(message, type = 'error') {
-    if (typeof showMessage === 'function') showMessage('gateMessage', message, type);
+    if (typeof showMessage === 'function') showMessage(app && !app.classList.contains('hidden') ? 'adminNotice' : 'gateMessage', message, type);
     else if (gateMessage) {
       gateMessage.classList.remove('hidden');
       gateMessage.textContent = message;
@@ -39,23 +39,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const status = await apiAdminStatus();
       if (status.unlocked) {
-        openApp();
+        openApp(status);
         return;
       }
-      const needsPhone = status.twoFactor && status.twoFactor.needsPhone && !(status.twoFactor.channel === 'sms');
       setVisible('notSignedIn', false);
       setVisible('notAdmin', false);
-      setVisible('phoneEnroll', Boolean(status.smsConfigured && (!status.twoFactor || status.twoFactor.needsPhone || !status.twoFactor.channel || status.twoFactor.channel !== 'sms')));
-      if (status.smsConfigured && status.twoFactor && status.twoFactor.channel === 'sms') {
-        setVisible('phoneEnroll', false);
-      }
-      if (needsPhone) setVisible('phoneEnroll', true);
-      setVisible('unlockPanel', !needsPhone);
+      setVisible('phoneEnroll', false);
+      setVisible('unlockPanel', true);
       const hint = document.getElementById('unlockHint');
       if (hint && status.twoFactor) {
         const ch = status.twoFactor.channel;
         if (ch === 'sms') hint.textContent = `A code will be texted to ${status.twoFactor.destinationMasked}. This is required every time you enter admin.`;
-        else if (ch === 'email') hint.textContent = `SMS is not configured, so a code will be emailed to ${status.twoFactor.destinationMasked}.`;
+        else if (ch === 'email') hint.textContent = `A code will be emailed to ${status.twoFactor.destinationMasked}. Unlock admin before enrolling or changing your phone.`;
         else if (ch === 'dev') hint.textContent = 'Development mode: the 2FA code will be printed in the server log.';
         else hint.textContent = 'Configure Twilio or email on the server to send 2FA codes.';
       }
@@ -68,9 +63,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function openApp() {
+  function openApp(status = {}) {
     gate.classList.add('hidden');
     app.classList.remove('hidden');
+    const phone = document.getElementById('phoneEnroll');
+    if (phone) {
+      phone.classList.add('surface-card', 'mb-6');
+      app.appendChild(phone);
+      setVisible('phoneEnroll', Boolean(status.smsConfigured));
+    }
     document.getElementById('lockAdminButton').classList.remove('hidden');
     if (typeof setupTabs === 'function') setupTabs('main [role="tablist"]');
     loadUsers();
@@ -114,8 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('confirmUnlockCode').addEventListener('click', async () => {
     try {
-      await apiAdminUnlockConfirm(document.getElementById('unlockCodeInput').value);
-      openApp();
+      const status = await apiAdminUnlockConfirm(document.getElementById('unlockCodeInput').value);
+      openApp(status);
     } catch (error) {
       showGateMsg(error.message);
     }
@@ -123,6 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('lockAdminButton').addEventListener('click', async () => {
     try { await apiAdminLock(); } catch (_err) { /* ignore */ }
+    app.classList.add('hidden');
+    gate.classList.remove('hidden');
+    document.getElementById('lockAdminButton').classList.add('hidden');
+    loadStatus();
+  });
+  window.addEventListener('adminSessionExpired', () => {
     app.classList.add('hidden');
     gate.classList.remove('hidden');
     document.getElementById('lockAdminButton').classList.add('hidden');
@@ -405,6 +412,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  if (typeof setupAppShell === 'function') setupAppShell();
   loadStatus();
 });

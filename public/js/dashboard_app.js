@@ -1,6 +1,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const sessionsListContainer = document.getElementById('sessionsList');
     const loadingSessionsMessage = document.getElementById('loadingSessions');
+    const loadMoreButton = document.getElementById('loadMoreSessions');
+    let nextSessionCursor = null;
     const sessionDetailModal = document.getElementById('sessionDetailModal');
     const closeModalButton = document.getElementById('closeSessionDetailModalButton');
     const sessionReaderContent = document.getElementById('sessionReaderContent');
@@ -64,21 +66,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (event.target.closest('.tab-link') && sessionReaderContent) sessionReaderContent.scrollTop = 0;
     });
 
-    async function loadUserSessions() {
+    async function loadUserSessions(append = false) {
         if (!sessionsListContainer || !loadingSessionsMessage) return;
         try {
             loadingSessionsMessage.textContent = 'Loading your sessions...';
             loadingSessionsMessage.classList.remove('hidden');
-            sessionsListContainer.innerHTML = ''; 
+            if (!append) sessionsListContainer.innerHTML = '';
+            if (loadMoreButton) loadMoreButton.disabled = true;
 
-            const response = await apiGetUserSessions(); 
+            const response = await apiGetUserSessions(append ? nextSessionCursor : null);
+            nextSessionCursor = response.nextCursor || null;
+            loadMoreButton?.classList.toggle('hidden', !nextSessionCursor);
             
             if (response.sessions && response.sessions.length > 0) {
-                sessionsListContainer.innerHTML = ''; 
+                if (!append) sessionsListContainer.innerHTML = '';
                 response.sessions.forEach(session => {
                     sessionsListContainer.appendChild(createSessionCard(session));
                 });
-            } else {
+            } else if (!append) {
                 sessionsListContainer.innerHTML = `
                     <div class="empty-state col-span-full">
                         <h3>No saved sessions yet</h3>
@@ -88,7 +93,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (error) {
             const message = error.data?.message || error.message || 'Could not load your sessions. Please try again.';
-            sessionsListContainer.innerHTML = `<p class="error-message col-span-full text-center py-5">${message}</p>`;
+            const notice = document.createElement('p');
+            notice.className = 'error-message col-span-full text-center py-5';
+            notice.textContent = message;
+            sessionsListContainer.replaceChildren(notice);
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
                 localStorage.removeItem('userEmail');
@@ -96,8 +104,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } finally {
             if(loadingSessionsMessage) loadingSessionsMessage.classList.add('hidden');
+            if (loadMoreButton) loadMoreButton.disabled = false;
         }
     }
+    loadMoreButton?.addEventListener('click', () => loadUserSessions(true));
 
     function createSessionCard(session) {
         const card = document.createElement('div');
@@ -535,7 +545,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     slp, ssp, sks, sap, snk, quizOptsForRegen 
                 );
                 window.currentDashboardSessionData = updatedSession; 
-                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', 'Content regenerated successfully!', 'success', 3000);
+                if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', updatedSession.warnings?.length ? updatedSession.warnings.join(' ') : 'Content regenerated successfully!', updatedSession.warnings?.length ? 'warning' : 'success', updatedSession.warnings?.length ? 0 : 3000);
                 if(modalSummaryOutput) renderModalSummary(updatedSession.summary, currentKeywordsForModalHighlighting);
                 
                 if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = ''; 
@@ -641,7 +651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 modalExplanationOutput.classList.remove('hidden');
                 if(regenerateStatus && typeof window.clearMessage === 'function') window.clearMessage('regenerateStatus');
             } catch (error) {
-                modalExplanationOutput.innerHTML = `<p class="error-message p-3 rounded-md">Error: ${error.message || 'Could not get explanation.'}</p>`;
+                modalExplanationOutput.textContent = `Error: ${error.message || 'Could not get explanation.'}`;
                 modalExplanationOutput.classList.remove('hidden');
                 if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', `Explanation error: ${error.message || 'Could not get explanation.'}`, 'error', 3000);
             } finally {
@@ -652,9 +662,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const logoutBtnDashboard = document.getElementById('logoutButton');
     if (logoutBtnDashboard) {
-        logoutBtnDashboard.addEventListener('click', () => {
+        logoutBtnDashboard.addEventListener('click', async () => {
+            try { await apiLogout(); }
+            catch (_error) { alert('Sign out could not be completed. Please try again.'); return; }
             localStorage.removeItem('authToken');
             localStorage.removeItem('userEmail');
+            localStorage.removeItem('userPlan');
+            localStorage.removeItem('userIsAdmin');
             window.location.href = 'index.html';
         });
     }
@@ -669,7 +683,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!due.length) {
                 dueList.textContent = 'Nothing is due. Study flashcards and rate them Again/Hard/Good/Easy to fill this list.';
             } else {
-                dueList.innerHTML = due.slice(0, 12).map((item) => `<div class="py-2 border-b" style="border-color:var(--border)"><strong>${item.term || item.cardKey}</strong> · due ${new Date(item.dueAt).toLocaleString()}</div>`).join('');
+                dueList.replaceChildren(...due.slice(0, 12).map(item => {
+                    const row = document.createElement('div');
+                    row.className = 'py-2 border-b';
+                    row.style.borderColor = 'var(--border)';
+                    const term = document.createElement('strong');
+                    term.textContent = item.term || item.cardKey;
+                    row.append(term, document.createTextNode(` · due ${new Date(item.dueAt).toLocaleString()}`));
+                    return row;
+                }));
             }
         } catch (_err) {
             dueList.textContent = 'Could not load due cards.';

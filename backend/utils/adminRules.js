@@ -20,8 +20,11 @@ function isOwnerEmail(email) {
 
 function isAdminUser(user) {
   if (!user) return false;
-  if (isOwnerEmail(user.email)) return true;
   return String(user.role || '').toLowerCase() === 'admin';
+}
+
+function isOwnerUser(user) {
+  return Boolean(user && Number(user.is_owner) === 1 && isAdminUser(user));
 }
 
 function normalizePhone(raw) {
@@ -47,7 +50,7 @@ function maskPhone(phone) {
 function canChangeAdminRole({ actor, target, nextRole, adminCount }) {
   if (!target) return { ok: false, reason: 'User not found.' };
   const makingAdmin = nextRole === 'admin';
-  if (isOwnerEmail(target.email) && !makingAdmin) {
+  if (isOwnerUser(target) && !makingAdmin) {
     return { ok: false, reason: 'The owner account cannot be demoted.' };
   }
   if (actor && Number(actor.id) === Number(target.id) && !makingAdmin) {
@@ -64,7 +67,7 @@ function canDeleteUser({ actor, target, adminCount }) {
   if (actor && Number(actor.id) === Number(target.id)) {
     return { ok: false, reason: 'You cannot delete your own account from admin.' };
   }
-  if (isOwnerEmail(target.email)) {
+  if (isOwnerUser(target)) {
     return { ok: false, reason: 'The owner account cannot be deleted.' };
   }
   if (isAdminUser(target) && Number(adminCount) <= 1) {
@@ -78,7 +81,7 @@ function canBanUser({ actor, target }) {
   if (actor && Number(actor.id) === Number(target.id)) {
     return { ok: false, reason: 'You cannot ban yourself.' };
   }
-  if (isOwnerEmail(target.email)) {
+  if (isOwnerUser(target)) {
     return { ok: false, reason: 'The owner account cannot be banned.' };
   }
   return { ok: true };
@@ -96,6 +99,7 @@ module.exports = {
   ownerEmails,
   notifyEmails,
   isOwnerEmail,
+  isOwnerUser,
   isAdminUser,
   normalizePhone,
   isValidE164,

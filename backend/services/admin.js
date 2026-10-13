@@ -11,7 +11,7 @@ const notify = require('./notify');
 const gcpMonitoring = require('./gcpMonitoring');
 const {
   isAdminUser,
-  isOwnerEmail,
+  isOwnerUser,
   normalizePhone,
   isValidE164,
   maskPhone,
@@ -37,7 +37,7 @@ function publicAdminUser(user) {
     plan: user.plan || 'free',
     role: isAdminUser(user) ? 'admin' : 'user',
     isAdmin: isAdminUser(user),
-    isOwner: isOwnerEmail(user.email),
+    isOwner: isOwnerUser(user),
     isBanned: Boolean(user.isBanned || user.is_banned),
     bannedAt: user.banned_at || null,
     banReason: user.ban_reason || null,
@@ -96,7 +96,7 @@ function gateStatus(user, adminToken) {
   const unlocked = Boolean(adminToken && Number(adminToken.userId) === Number(user.id));
   return {
     isAdmin: isAdminUser(user),
-    isOwner: isOwnerEmail(user.email),
+    isOwner: isOwnerUser(user),
     unlocked,
     expiresAt: adminToken && adminToken.exp ? new Date(adminToken.exp * 1000).toISOString() : null,
     twoFactor: factor,
@@ -109,9 +109,6 @@ function gateStatus(user, adminToken) {
 async function startUnlock(user, ip) {
   if (!isAdminUser(user)) throw httpError('Admin access required.', 403);
   const factor = otp.twoFactorStatus(user);
-  if (factor.needsPhone && !Number(user.phone_verified)) {
-    throw httpError('Add and verify a phone number before entering admin. SMS 2FA is required for admin accounts.', 400);
-  }
   if (!factor.channel) {
     throw httpError('Admin 2FA is not configured. Set Twilio (SMS) or SMTP/Resend (email) on the server.', 503);
   }
@@ -152,9 +149,9 @@ async function startPhoneChange(user, rawPhone, ip) {
 
 async function confirmPhoneChange(user, code, rawPhone, ip) {
   if (!isAdminUser(user)) throw httpError('Admin access required.', 403);
-  await otp.verify({ user, purpose: 'admin_phone', code });
   const phone = normalizePhone(rawPhone);
   if (!isValidE164(phone)) throw httpError('Enter a valid phone number.', 400);
+  await otp.verify({ user, purpose: 'admin_phone', code, destination: phone });
   await User.updateFields(user.id, { phone, phone_verified: 1 });
   await writeAudit({ actor: user, action: 'phone_verified', targetType: 'admin', targetId: user.id, targetEmail: user.email, details: { phone: maskPhone(phone) }, ip });
   return User.findById(user.id);
@@ -215,7 +212,7 @@ async function setPlan({ actor, targetId, plan, password, ip }) {
   const target = await User.findById(targetId);
   if (!target) throw httpError('User not found.', 404);
   const next = plan === 'premium' ? 'premium' : 'free';
-  const updated = await User.updateFields(target.id, { plan: next });
+  const updated = await User.updateFields(target.id, { plan: next, billing_provider: 'manual', premium_until: null });
   await writeAudit({
     actor,
     action: 'plan_changed',

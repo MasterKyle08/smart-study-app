@@ -55,7 +55,7 @@
                 <p class="text-sm">This account is not an admin.</p>
             </div>
             <div id="phoneEnroll" class="hidden space-y-3">
-                <p class="text-sm" style="color:var(--muted)">Admin accounts must verify a phone number. A code will be texted to you.</p>
+                <p class="text-sm" style="color:var(--muted)">Change your admin verification phone. Your current admin verification is required before a new phone can be enrolled.</p>
                 <label class="block text-sm font-medium">Phone (E.164)</label>
                 <input id="phoneInput" class="form-input w-full rounded-xl" placeholder="+15551234567" autocomplete="tel">
                 <button id="sendPhoneCode" type="button" class="btn-primary">Text a code</button>
@@ -71,6 +71,7 @@
         </section>
 
         <section id="adminApp" class="hidden">
+            <div id="adminNotice" class="hidden"></div>
             <div class="mb-6">
                 <h1 class="text-2xl sm:text-3xl font-semibold">Admin</h1>
                 <p class="text-sm mt-1" style="color:var(--muted)">2FA is required every visit. Destructive actions also need your password. The audit log cannot be edited.</p>

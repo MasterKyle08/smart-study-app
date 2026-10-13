@@ -6,8 +6,11 @@
 const express = require('express');
 const authenticateToken = require('../middleware/auth');
 const premadeService = require('../services/premade');
+const aiJob = require('../services/aiJob');
+const { aiInput } = require('../utils/input');
 
 const router = express.Router();
+router.use(aiInput, aiJob.attachSignal);
 
 router.get('/', async (req, res) => {
   try {
@@ -47,11 +50,7 @@ router.get('/:slug', async (req, res) => {
 
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const authService = require('../services/auth');
-    const usage = require('../services/usage');
-    const premium = authService.resolvePlan(req.user) === 'premium';
-    const quiz = await usage.runWithContext({ user: req.user, ip: req.ip, premium }, async () => {
-      await usage.assertJobAllowed({ user: req.user, ip: req.ip, premium });
+    const quiz = await aiJob.run(req, async ({ premium }) => {
       const created = await premadeService.createPremadeQuiz({
       userId: req.user.id,
       title: req.body.title,
@@ -62,10 +61,10 @@ router.post('/', authenticateToken, async (req, res) => {
       sourceText: req.body.sourceText,
       customInstructions: req.body.customInstructions,
       premium,
+      isPublic: req.body.isPublic === true,
     });
-      await usage.recordJob();
       return created;
-    });
+    }, { action: true });
     res.status(201).json({ quiz });
   } catch (error) {
     console.error('[POST /api/premade] Error:', error.message);

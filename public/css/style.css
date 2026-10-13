@@ -5139,10 +5139,6 @@ input, select, textarea {
   z-index: 120;
 }
 
-.z-\[130\] {
-  z-index: 130;
-}
-
 .z-\[90\] {
   z-index: 90;
 }
@@ -5153,6 +5149,10 @@ input, select, textarea {
 
 .m-0\.5 {
   margin: 0.125rem;
+}
+
+.m-1 {
+  margin: 0.25rem;
 }
 
 .mx-auto {
@@ -5306,6 +5306,14 @@ input, select, textarea {
   display: none;
 }
 
+.h-1 {
+  height: 0.25rem;
+}
+
+.h-12 {
+  height: 3rem;
+}
+
 .h-16 {
   height: 4rem;
 }
@@ -5346,6 +5354,10 @@ input, select, textarea {
   height: 1.5rem;
 }
 
+.h-8 {
+  height: 2rem;
+}
+
 .h-full {
   height: 100%;
 }
@@ -5372,10 +5384,6 @@ input, select, textarea {
 
 .\!min-h-0 {
   min-height: 0px !important;
-}
-
-.min-h-\[120px\] {
-  min-height: 120px;
 }
 
 .min-h-screen {
@@ -5455,6 +5463,10 @@ input, select, textarea {
 }
 
 .flex-grow {
+  flex-grow: 1;
+}
+
+.grow {
   flex-grow: 1;
 }
 

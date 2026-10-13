@@ -61,7 +61,7 @@ router.post('/lock', authenticateToken, requireAdminRole, (req, res) => {
   res.json({ message: 'Admin mode locked.' });
 });
 
-router.post('/phone/start', authenticateToken, requireAdminRole, otpLimiter, async (req, res) => {
+router.post('/phone/start', authenticateToken, requireAdminSession, otpLimiter, async (req, res) => {
   try {
     const issued = await admin.startPhoneChange(req.user, req.body && req.body.phone, req.ip);
     res.json({ message: `A code was texted to ${issued.phoneMasked}.`, ...issued });
@@ -70,7 +70,7 @@ router.post('/phone/start', authenticateToken, requireAdminRole, otpLimiter, asy
   }
 });
 
-router.post('/phone/confirm', authenticateToken, requireAdminRole, otpLimiter, async (req, res) => {
+router.post('/phone/confirm', authenticateToken, requireAdminSession, otpLimiter, async (req, res) => {
   try {
     const user = await admin.confirmPhoneChange(req.user, req.body && req.body.code, req.body && req.body.phone, req.ip);
     res.json({ message: 'Phone verified for admin 2FA.', user: admin.publicAdminUser(user) });

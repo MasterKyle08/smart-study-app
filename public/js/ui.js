@@ -80,7 +80,13 @@ function clearMessage(elementId) {
 function showProcessingStatus(elementId, message, showSpinner = false) {
     const statusElement = document.getElementById(elementId);
     if (statusElement) {
-        statusElement.innerHTML = `${message}${showSpinner ? ' <div class="inline-block animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-indigo-600 ml-2 align-middle"></div>' : ''}`;
+        statusElement.textContent = message;
+        if (showSpinner) {
+            const spinner = document.createElement('span');
+            spinner.className = 'inline-block animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-indigo-600 ml-2 align-middle';
+            spinner.setAttribute('aria-hidden', 'true');
+            statusElement.appendChild(spinner);
+        }
         statusElement.className = 'p-3 rounded-md shadow-sm text-sm font-medium bg-blue-50 border border-blue-200 text-blue-700 my-2 block';
         statusElement.classList.remove('hidden');
     }
@@ -624,7 +630,7 @@ function displayFlashcard(index) {
     frontFace.innerHTML = `
         <div class="p-4 sm:p-6 flex flex-col items-center justify-center h-full text-center">
             <p class="text-md sm:text-lg font-semibold text-indigo-700 mb-3 sm:mb-4 leading-tight">${processTextForDisplay(cardData.term)}</p>
-            <textarea id="flashcardUserAnswer-${flashcardContext}" class="form-textarea w-full max-w-xs h-20 text-sm p-2 border-slate-300 rounded-md shadow-sm mb-3 focus:ring-indigo-500 focus:border-indigo-500" placeholder="Type your answer here...">${cardState.isFlipped ? '' : cardState.userAnswer || ''}</textarea>
+            <textarea id="flashcardUserAnswer-${flashcardContext}" class="form-textarea w-full max-w-xs h-20 text-sm p-2 border-slate-300 rounded-md shadow-sm mb-3 focus:ring-indigo-500 focus:border-indigo-500" placeholder="Type your answer here...">${cardState.isFlipped ? '' : escapeHtml(cardState.userAnswer || '')}</textarea>
             <button id="submitFlashcardAnswerBtn-${flashcardContext}" class="flashcard-modal-action-btn bg-green-500 hover:bg-green-600 focus:ring-green-400">Submit & Flip</button>
         </div>`;
     const backFace = document.createElement('div');
@@ -1414,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 mainExplanationOutput.classList.remove('hidden');
                 hideProcessingStatus('processingStatus');
             } catch (error) {
-                mainExplanationOutput.innerHTML = `<p class="error-message p-3 rounded-md">Error: ${error.message || 'Could not get explanation.'}</p>`;
+                mainExplanationOutput.textContent = `Error: ${error.message || 'Could not get explanation.'}`;
                 mainExplanationOutput.classList.remove('hidden');
                 showMessage('processingStatus', `Explanation error: ${error.message}`, 'error');
             } finally {

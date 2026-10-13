@@ -5,6 +5,7 @@
 
 const PremadeQuiz = require('../models/PremadeQuiz');
 const aiService = require('./ai');
+const { normalizeQuizOptions } = require('../utils/quizOptions');
 
 function slugify(value) {
   return value
@@ -54,37 +55,6 @@ function buildPromptContext({ title, topic, description, sourceText, customInstr
   return lines.join('\n\n').trim();
 }
 
-function normalizeQuizOptions(quizOptions = {}) {
-  const defaultOptions = {
-    questionTypes: ['multiple_choice'],
-    numQuestions: 'ai_choice',
-    difficulty: 'medium',
-  };
-
-  const normalized = {
-    ...defaultOptions,
-    ...quizOptions,
-  };
-
-  if (!Array.isArray(normalized.questionTypes) || normalized.questionTypes.length === 0) {
-    normalized.questionTypes = defaultOptions.questionTypes;
-  }
-  normalized.questionTypes = normalized.questionTypes
-    .map(type => type && type.toString().trim())
-    .filter(Boolean);
-
-  const allowedCounts = ['ai_choice', '5', '7', '10', '12', '15'];
-  if (!allowedCounts.includes(String(normalized.numQuestions))) {
-    normalized.numQuestions = defaultOptions.numQuestions;
-  }
-
-  const allowedDifficulty = ['easy', 'medium', 'hard'];
-  if (!allowedDifficulty.includes(String(normalized.difficulty))) {
-    normalized.difficulty = defaultOptions.difficulty;
-  }
-
-  return normalized;
-}
 
 async function createPremadeQuiz({
   userId,
@@ -96,6 +66,7 @@ async function createPremadeQuiz({
   sourceText,
   customInstructions,
   premium = false,
+  isPublic = false,
 }) {
   if (!title || typeof title !== 'string' || title.trim() === '') {
     const error = new Error('A title is required to create a premade quiz.');
@@ -130,7 +101,7 @@ async function createPremadeQuiz({
     sourceText: promptContext,
     quizJson: aiQuiz,
     quizOptions: normalizedOptions,
-    isPublic: true,
+    isPublic: isPublic === true,
   });
 
   return {
@@ -154,8 +125,11 @@ async function getPremadeQuiz(slug, { userId } = {}) {
   if (!slug) return null;
   const quiz = await PremadeQuiz.findBySlug(slug, { includeQuiz: true, includePrivate: true });
   if (!quiz) return null;
-  if (!quiz.isPublic && Number(quiz.userId) !== Number(userId)) return null;
-  return { ...quiz, quizUrl: `/quiz/${quiz.slug}` };
+  const owned = quiz.userId != null && userId != null && Number(quiz.userId) === Number(userId);
+  if (!quiz.isPublic && !owned) return null;
+  const result = { ...quiz, quizUrl: `/quiz/${quiz.slug}` };
+  if (!owned) delete result.sourceText;
+  return result;
 }
 
 async function listMine(userId) {

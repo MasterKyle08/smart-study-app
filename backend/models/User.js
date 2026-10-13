@@ -4,20 +4,21 @@
  */
 
 const { db } = require('./db'); // Import the Turso client instance
-const { isOwnerEmail, isAdminUser, maskPhone } = require('../utils/adminRules');
+const { isOwnerUser, isAdminUser, maskPhone } = require('../utils/adminRules');
+const { normalizeEmail } = require('../utils/identity');
 
-const PUBLIC_COLUMNS = 'id, email, created_at, plan, role, is_banned, banned_at, ban_reason, phone, phone_verified, stripe_customer_id, billing_provider';
+const PUBLIC_COLUMNS = 'id, email, created_at, plan, role, is_owner, is_banned, banned_at, ban_reason, phone, phone_verified, stripe_customer_id, billing_provider, premium_until';
 
 function formatUser(row, { includePhone = false, includePassword = false } = {}) {
   if (!row) return null;
   const user = { ...row };
   user.id = Number(user.id);
   user.plan = user.plan || 'free';
-  user.role = isOwnerEmail(user.email) ? 'admin' : (String(user.role || 'user').toLowerCase() === 'admin' ? 'admin' : 'user');
+  user.role = String(user.role || '').toLowerCase() === 'admin' ? 'admin' : 'user';
   user.is_banned = Number(user.is_banned) || 0;
   user.phone_verified = Number(user.phone_verified) || 0;
   user.isAdmin = isAdminUser(user);
-  user.isOwner = isOwnerEmail(user.email);
+  user.isOwner = isOwnerUser(user);
   user.isBanned = Boolean(user.is_banned);
   user.phoneMasked = maskPhone(user.phone);
   if (!includePhone) delete user.phone;
@@ -37,6 +38,7 @@ class User {
    * @throws {Error} If an error occurs during database operation.
    */
   static async create(email, passwordHash) {
+    email = normalizeEmail(email);
     const sql = 'INSERT INTO Users (email, password_hash) VALUES (?, ?)';
     const params = [email, passwordHash];
     try {
@@ -51,19 +53,14 @@ class User {
         id: Number(userId),
         email,
         plan: 'free',
-        role: isOwnerEmail(email) ? 'admin' : 'user',
+        role: 'user',
         created_at: new Date().toISOString(),
       };
-      if (created.role === 'admin') {
-        try {
-          await db.execute({ sql: "UPDATE Users SET role = 'admin' WHERE id = ?", args: [created.id] });
-        } catch (_err) { /* column may not exist yet on first boot */ }
-      }
       return formatUser(created);
     } catch (error) {
       console.error('Error creating user in Turso DB:', error.message);
       // Check for unique constraint violation (specific error codes might vary by driver/DB)
-      if (error.message && error.message.toLowerCase().includes('unique constraint failed: users.email')) {
+      if (/unique constraint/i.test(error.message || '')) {
         const conflictError = new Error('Email already in use.');
         conflictError.statusCode = 409; // Conflict
         throw conflictError;
@@ -79,8 +76,8 @@ class User {
    * @throws {Error} If an error occurs during database operation.
    */
   static async findByEmail(email) {
-    const sql = 'SELECT * FROM Users WHERE email = ?';
-    const params = [email];
+    const sql = 'SELECT * FROM Users WHERE LOWER(TRIM(email)) = ?';
+    const params = [normalizeEmail(email)];
     try {
       const result = await db.execute({ sql, args: params });
       if (result.rows.length > 0) {
@@ -148,19 +145,14 @@ class User {
   }
 
   static async countAdmins() {
-    const owners = require('../utils/adminRules').ownerEmails();
     let sql = "SELECT COUNT(*) AS c FROM Users WHERE role = 'admin'";
     const args = [];
-    if (owners.length) {
-      sql += ` OR LOWER(email) IN (${owners.map(() => '?').join(', ')})`;
-      args.push(...owners);
-    }
     const result = await db.execute({ sql, args });
     return Number(result.rows[0] && result.rows[0].c) || 0;
   }
 
   static async updateFields(id, fields) {
-    const allowed = ['role', 'plan', 'is_banned', 'banned_at', 'ban_reason', 'phone', 'phone_verified'];
+    const allowed = ['role', 'plan', 'is_banned', 'banned_at', 'ban_reason', 'phone', 'phone_verified', 'billing_provider', 'premium_until'];
     const sets = [];
     const args = [];
     for (const key of allowed) {

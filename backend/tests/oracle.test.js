@@ -38,7 +38,7 @@ test('production HTTP startup, secure auth cookies and proxy addressing work wit
     const registration = await fetch(`${base}/api/auth/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-forwarded-proto': 'https', 'x-forwarded-for': '203.0.113.42' },
-      body: JSON.stringify({ email: 'owner@example.test', password: 'test-password-only' }),
+      body: JSON.stringify({ email: 'member@example.test', password: 'test-password-only' }),
     });
     assert.equal(registration.status, 201);
     const cookie = registration.headers.get('set-cookie');
@@ -46,11 +46,11 @@ test('production HTTP startup, secure auth cookies and proxy addressing work wit
     assert.match(cookie, /; HttpOnly/i);
     assert.match(cookie, /; SameSite=Lax/i);
     const registered = await registration.json();
-    assert.equal(registered.user.isAdmin, true);
+    assert.equal(registered.user.isAdmin, false);
     assert.equal(registered.token, undefined);
     const current = await fetch(`${base}/api/auth/me`, { headers: { cookie: cookie.split(';')[0] } });
     assert.equal(current.status, 200);
-    assert.equal((await current.json()).user.email, 'owner@example.test');
+    assert.equal((await current.json()).user.email, 'member@example.test');
     const missing = await fetch(`${base}/api/does-not-exist`);
     assert.equal(missing.status, 404);
     await missing.json();

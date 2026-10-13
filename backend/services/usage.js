@@ -1,6 +1,7 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const { db } = require('../models/db');
 const { usageDate, estimateTokens, userKeyFrom } = require('../utils/usageMath');
+const { writeTransaction } = require('../utils/transaction');
 
 const usageStore = new AsyncLocalStorage();
 
@@ -30,10 +31,8 @@ async function getRow(usageDay, userKey) {
 }
 
 async function ensureRow(usageDay, userKey) {
-  const existing = await getRow(usageDay, userKey);
-  if (existing) return existing;
   await db.execute({
-    sql: `INSERT INTO AiUsageDaily (usage_date, user_key, gemma_requests, premium_requests, jobs, input_tokens, output_tokens, ad_rewards, last_ad_at)
+    sql: `INSERT OR IGNORE INTO AiUsageDaily (usage_date, user_key, gemma_requests, premium_requests, jobs, input_tokens, output_tokens, ad_rewards, last_ad_at)
           VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL)`,
     args: [usageDay, userKey],
   });
@@ -52,8 +51,9 @@ async function totalsForDay(usageDay) {
     args: [usageDay],
   });
   const row = result.rows[0] || {};
+  const pool = await db.execute({ sql: 'SELECT free_attempts FROM AiPoolDaily WHERE usage_date = ?', args: [usageDay] });
   return {
-    gemmaRequests: Number(row.gemma_requests) || 0,
+    gemmaRequests: Math.max(Number(row.gemma_requests) || 0, Number(pool.rows[0]?.free_attempts) || 0),
     premiumRequests: Number(row.premium_requests) || 0,
     jobs: Number(row.jobs) || 0,
     inputTokens: Number(row.input_tokens) || 0,
@@ -70,7 +70,7 @@ function jobLimit({ premium, user }) {
 async function snapshot({ user, ip, premium = false } = {}) {
   const day = usageDate();
   const key = userKeyFrom(user, ip);
-  const mine = await ensureRow(day, key);
+  const mine = await getRow(day, key) || {};
   const global = await totalsForDay(day);
   const baseJobs = jobLimit({ premium, user });
   const adRewards = Number(mine.ad_rewards) || 0;
@@ -89,7 +89,7 @@ async function snapshot({ user, ip, premium = false } = {}) {
       gemmaRemaining,
       estimatedInputTokens: global.inputTokens,
       estimatedOutputTokens: global.outputTokens,
-      note: 'Google does not publish remaining quota to apps. This is Smart Study’s own count of Gemma 4 calls, capped to match the typical 1,500 free requests/day.',
+      note: 'Conservative count of free provider attempts, including retries. Actual Google project/model quotas can differ.',
     },
     you: {
       keyType: key.startsWith('user:') ? 'account' : 'visitor',
@@ -104,6 +104,8 @@ async function snapshot({ user, ip, premium = false } = {}) {
       lastAdAt: mine.last_ad_at || null,
       adCooldownHours: AD_COOLDOWN_HOURS,
       jobsPerAd: JOBS_PER_AD,
+      requestsUsed: Number(mine.request_attempts) || 0,
+      reservedTokens: Number(mine.reserved_tokens) || 0,
     },
   };
 }
@@ -119,7 +121,7 @@ async function assertJobAllowed({ user, ip, premium = false } = {}) {
   if (status.you.jobsRemaining <= 0) {
     const extra = premium
       ? 'Your Premium daily study actions are used up.'
-      : `You have used today’s ${status.you.jobsLimit} free study actions. Watch a rewarded ad (max ${AD_REWARDS_PER_DAY}/day) for +${JOBS_PER_AD}, or upgrade to Premium.`;
+      : `You have used today's ${status.you.jobsLimit} free study actions. They reset at midnight Pacific.`;
     const error = new Error(extra);
     error.statusCode = 429;
     error.usage = status;
@@ -175,6 +177,7 @@ async function recordRequest({ premium = false, inputTokens = 0, outputTokens = 
 async function recordJob() {
   const ctx = currentContext();
   if (!ctx) return;
+  if (ctx.jobReservation) return; // Admission already reserved this action.
   const day = usageDate();
   const key = userKeyFrom(ctx.user, ctx.ip);
   await ensureRow(day, key);
@@ -184,63 +187,83 @@ async function recordJob() {
   });
 }
 
+async function reserveJob({ user, ip, premium = false }) {
+  const day = usageDate();
+  const key = userKeyFrom(user, ip);
+  const epoch = await writeTransaction(async tx => {
+    await tx.execute({ sql: 'INSERT OR IGNORE INTO AiUsageDaily (usage_date, user_key) VALUES (?, ?)', args: [day, key] });
+    const row = (await tx.execute({ sql: 'SELECT * FROM AiUsageDaily WHERE usage_date = ? AND user_key = ?', args: [day, key] })).rows[0];
+    const limit = jobLimit({ user, premium }) + (premium ? 0 : Number(row.bonus_jobs || 0) + Number(row.ad_rewards || 0) * JOBS_PER_AD);
+    const reserved = await tx.execute({ sql: 'UPDATE AiUsageDaily SET jobs = jobs + 1 WHERE usage_date = ? AND user_key = ? AND jobs < ?', args: [day, key, limit] });
+    if (!reserved.rowsAffected) throw Object.assign(new Error('Your daily study actions are used up. They reset at midnight Pacific.'), { statusCode: 429 });
+    return Number(row.budget_epoch || 0);
+  });
+  const ctx = currentContext();
+  if (ctx) ctx.jobReservation = { day, key, epoch };
+}
+
+async function releaseUnusedJob() {
+  const ctx = currentContext();
+  if (!ctx?.jobReservation || ctx.providerAttempts) return;
+  const { day, key, epoch } = ctx.jobReservation;
+  await db.execute({ sql: 'UPDATE AiUsageDaily SET jobs = MAX(0, jobs - 1) WHERE usage_date = ? AND user_key = ? AND budget_epoch = ?', args: [day, key, epoch] });
+  ctx.jobReservation = null;
+}
+
+async function reserveRequest(estimatedTokens, { premium }) {
+  const ctx = currentContext();
+  if (!ctx) throw Object.assign(new Error('AI requests must run within an authorized study action.'), { statusCode: 503 });
+  const day = usageDate();
+  const key = userKeyFrom(ctx.user, ctx.ip);
+  const tokenLimit = Math.max(1, Number(process.env[premium ? 'PREMIUM_DAILY_TOKEN_BUDGET' : 'FREE_DAILY_TOKEN_BUDGET'] || (premium ? 1000000 : 200000)));
+  const requestLimit = Math.max(1, Number(process.env[premium ? 'PREMIUM_DAILY_REQUESTS' : 'FREE_DAILY_REQUESTS'] || (premium ? 400 : (ctx.user ? 96 : 40))));
+  const epoch = await writeTransaction(async tx => {
+    await tx.execute({ sql: 'INSERT OR IGNORE INTO AiUsageDaily (usage_date, user_key) VALUES (?, ?)', args: [day, key] });
+    const updated = await tx.execute({ sql: 'UPDATE AiUsageDaily SET request_attempts = request_attempts + 1, reserved_tokens = reserved_tokens + ? WHERE usage_date = ? AND user_key = ? AND request_attempts < ? AND reserved_tokens + ? <= ? RETURNING budget_epoch', args: [estimatedTokens, day, key, requestLimit, estimatedTokens, tokenLimit] });
+    if (!updated.rows.length) throw Object.assign(new Error('Your daily AI request or token budget is exhausted. Try again after midnight Pacific.'), { statusCode: 429 });
+    if (!premium) {
+      await tx.execute({ sql: 'INSERT OR IGNORE INTO AiPoolDaily (usage_date, free_attempts) SELECT ?, COALESCE(SUM(gemma_requests), 0) FROM AiUsageDaily WHERE usage_date = ?', args: [day, day] });
+      const pool = await tx.execute({ sql: 'UPDATE AiPoolDaily SET free_attempts = free_attempts + 1 WHERE usage_date = ? AND free_attempts < ?', args: [day, GEMMA_DAILY_BUDGET] });
+      if (!pool.rowsAffected) throw Object.assign(new Error('The shared free AI pool is exhausted. It resets at midnight Pacific.'), { statusCode: 429 });
+    }
+    return Number(updated.rows[0].budget_epoch || 0);
+  });
+  return { day, key, estimatedTokens, premium, epoch };
+}
+
+function markProviderStart() {
+  const ctx = currentContext();
+  if (ctx) ctx.providerAttempts = (ctx.providerAttempts || 0) + 1;
+}
+
+async function releaseUnusedRequest(reservation) {
+  if (!reservation) return;
+  await writeTransaction(async tx => {
+    await tx.execute({ sql: 'UPDATE AiUsageDaily SET request_attempts = MAX(0, request_attempts - 1), reserved_tokens = MAX(0, reserved_tokens - ?) WHERE usage_date = ? AND user_key = ? AND budget_epoch = ?', args: [reservation.estimatedTokens, reservation.day, reservation.key, reservation.epoch] });
+    if (!reservation.premium) await tx.execute({ sql: 'UPDATE AiPoolDaily SET free_attempts = MAX(0, free_attempts - 1) WHERE usage_date = ?', args: [reservation.day] });
+  });
+}
+
+async function reconcileRequest(reservation, data) {
+  const meta = data.usageMetadata || data.usage_metadata;
+  const actual = Number(meta?.totalTokenCount || meta?.total_token_count || 0);
+  if (!reservation || !actual) return;
+  await db.execute({ sql: 'UPDATE AiUsageDaily SET reserved_tokens = MAX(0, reserved_tokens + ?) WHERE usage_date = ? AND user_key = ? AND budget_epoch = ?', args: [actual - reservation.estimatedTokens, reservation.day, reservation.key, reservation.epoch] });
+}
+
 async function resetUserDay(user, extraJobs = 0) {
   const day = usageDate();
   const key = userKeyFrom(user, null);
   await ensureRow(day, key);
   const bonus = Math.max(0, parseInt(extraJobs, 10) || 0);
-  if (bonus) {
-    await db.execute({
-      sql: `UPDATE AiUsageDaily
-            SET jobs = 0, bonus_jobs = COALESCE(bonus_jobs, 0) + ?
-            WHERE usage_date = ? AND user_key = ?`,
-      args: [bonus, day, key],
-    });
-  } else {
-    await db.execute({
-      sql: `UPDATE AiUsageDaily SET jobs = 0 WHERE usage_date = ? AND user_key = ?`,
-      args: [day, key],
-    });
-  }
+  await writeTransaction(async tx => {
+    await tx.execute({ sql: 'UPDATE AiUsageDaily SET jobs = 0, request_attempts = 0, reserved_tokens = 0, budget_epoch = COALESCE(budget_epoch, 0) + 1, bonus_jobs = COALESCE(bonus_jobs, 0) + ? WHERE usage_date = ? AND user_key = ?', args: [bonus, day, key] });
+  });
   return snapshot({ user, premium: false });
 }
 
-async function grantAdReward({ user, ip, premium = false } = {}) {
-  if (premium) {
-    const error = new Error('Premium accounts already have a large daily allowance. Ads are for free study actions.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const day = usageDate();
-  const key = userKeyFrom(user, ip);
-  const row = await ensureRow(day, key);
-  const rewards = Number(row.ad_rewards) || 0;
-  if (rewards >= AD_REWARDS_PER_DAY) {
-    const error = new Error(`You already used today’s ${AD_REWARDS_PER_DAY} ad extras. That cap exists so a few ads cannot empty the shared Gemma pool.`);
-    error.statusCode = 429;
-    throw error;
-  }
-  if (row.last_ad_at) {
-    const last = new Date(row.last_ad_at).getTime();
-    const waitMs = AD_COOLDOWN_HOURS * 60 * 60 * 1000;
-    if (Date.now() - last < waitMs) {
-      const mins = Math.ceil((waitMs - (Date.now() - last)) / 60000);
-      const error = new Error(`Ad extras need a ${AD_COOLDOWN_HOURS}-hour gap. Try again in about ${mins} minute(s).`);
-      error.statusCode = 429;
-      throw error;
-    }
-  }
-  const global = await totalsForDay(day);
-  if (global.gemmaRequests >= GEMMA_DAILY_BUDGET) {
-    const error = new Error('The shared free Gemma pool is empty, so an extra action would still fail. Ads cannot create more Google free-tier requests.');
-    error.statusCode = 429;
-    throw error;
-  }
-  await db.execute({
-    sql: `UPDATE AiUsageDaily SET ad_rewards = ad_rewards + 1, last_ad_at = ? WHERE usage_date = ? AND user_key = ?`,
-    args: [new Date().toISOString(), day, key],
-  });
-  return snapshot({ user, ip, premium: false });
+async function grantAdReward() {
+  throw Object.assign(new Error('Ad rewards require trusted server verification and are currently unavailable.'), { statusCode: 501 });
 }
 
 module.exports = {
@@ -255,6 +278,12 @@ module.exports = {
   recordRequest,
   jobStats,
   recordJob,
+  reserveJob,
+  releaseUnusedJob,
+  reserveRequest,
+  reconcileRequest,
+  markProviderStart,
+  releaseUnusedRequest,
   grantAdReward,
   resetUserDay,
   GEMMA_DAILY_BUDGET,

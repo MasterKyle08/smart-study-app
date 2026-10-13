@@ -7,43 +7,22 @@ const fileService = require('../services/file');
 const aiService = require('../services/ai'); 
 const Session = require('../models/Session');
 const authenticateToken = require('../middleware/auth');
-const { userFromRequest } = require('../middleware/auth');
 const authService = require('../services/auth');
 const usage = require('../services/usage');
 const { assertOwnsRecord } = require('../utils/studyContent');
-const { reviewCard } = require('../utils/srs');
 const FlashcardReview = require('../models/FlashcardReview');
+const aiJob = require('../services/aiJob');
+const { aiInput } = require('../utils/input');
 
 const router = express.Router();
-
-async function optionalUser(req) {
-  return userFromRequest(req);
-}
+router.use(aiInput, aiJob.attachSignal);
 
 async function runAiJob(req, fn) {
-  const user = await optionalUser(req);
-  if (user && (user.isBanned || Number(user.is_banned))) {
-    const error = new Error('This account has been disabled.');
-    error.statusCode = 403;
-    throw error;
-  }
-  const premium = authService.resolvePlan(user) === 'premium';
-  return usage.runWithContext({ user, ip: req.ip, premium, calls: [] }, async () => {
-    await usage.assertJobAllowed({ user, ip: req.ip, premium });
-    const result = await fn({ user, premium });
-    await usage.recordJob();
-    const usageThisRun = usage.jobStats();
-    if (result && typeof result === 'object' && !Array.isArray(result)) {
-      result.usageThisRun = usageThisRun;
-    }
-    return result;
-  });
+  return aiJob.run(req, fn, { action: true });
 }
 
 async function withUsageContext(req, fn) {
-  const user = await optionalUser(req);
-  const premium = authService.resolvePlan(user) === 'premium';
-  return usage.runWithContext({ user, ip: req.ip, premium, calls: [] }, () => fn({ user, premium }));
+  return aiJob.run(req, fn);
 }
 
 // --- Process Uploaded Content ---
@@ -69,6 +48,7 @@ router.post('/process', async (req, res) => {
         const visionText = await aiService.extractTextFromImages(visionImages.slice(0, 3), { premium });
         sourceText = [sourceText, visionText].filter(Boolean).join('\n\n').trim();
       } catch (visionError) {
+        if (compact.length < 20) throw visionError;
         console.warn('[/process] Vision extraction failed, continuing with existing text:', visionError.message);
       }
     }
@@ -102,6 +82,7 @@ router.post('/process', async (req, res) => {
       summaryNegativeKeywords: summaryNegativeKeywordsArray,
       quizOptions,
       premium,
+      signal: req.aiSignal,
     });
     
     console.log("[/process] fileService.processUploadedText successful. Sending response.");
@@ -247,45 +228,32 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
         ? summaryNegativeKeywordsString.split(',').map(k => k.trim()).filter(k => k) : [];
 
     const parsedUpdatedSession = await runAiJob(req, async ({ premium }) => {
-    const regeneratedResults = {};
-    if (outputFormats.includes('summary') || outputFormats.includes('all')) {
-      regeneratedResults.summary = await aiService.generateSummary(
-          existingSession.extracted_text, 
-          summaryLengthPreference, summaryStylePreference,
-          summaryKeywordsArray, summaryAudiencePurpose,
-          summaryNegativeKeywordsArray,
-          { premium }
-      );
-    }
-    if (outputFormats.includes('flashcards') || outputFormats.includes('all')) {
-      const flashcardsArray = await aiService.generateFlashcards(existingSession.extracted_text, { premium: authService.resolvePlan(req.user) === 'premium' });
-      regeneratedResults.flashcards = JSON.stringify(flashcardsArray);
-    }
-    if (outputFormats.includes('quiz') || outputFormats.includes('all')) {
-      const currentQuizOptions = quizOptions || 
-                                 (existingSession.quiz_options ? JSON.parse(existingSession.quiz_options) : null) ||
-                                 { questionTypes: ['multiple_choice'], numQuestions: 'ai_choice', difficulty: 'medium' };
-      
-      if (!currentQuizOptions.questionTypes || currentQuizOptions.questionTypes.length === 0) {
-        currentQuizOptions.questionTypes = ['multiple_choice'];
+      const storedOptions = existingSession.quiz_options ? JSON.parse(existingSession.quiz_options) : {};
+      const currentQuizOptions = quizOptions || storedOptions;
+      const materials = await fileService.processUploadedText({
+        extractedText: existingSession.extracted_text, outputFormats,
+        originalFilename: existingSession.original_filename,
+        originalContentType: existingSession.original_content_type, userId: null,
+        summaryLengthPreference, summaryStylePreference,
+        summaryKeywords: summaryKeywordsArray, summaryAudiencePurpose,
+        summaryNegativeKeywords: summaryNegativeKeywordsArray,
+        quizOptions: currentQuizOptions, premium, signal: req.aiSignal,
+      });
+      const updates = {};
+      if (materials.summary !== undefined) updates.summary = materials.summary;
+      if (materials.flashcards !== undefined) updates.flashcards = JSON.stringify(materials.flashcards);
+      if (materials.quiz !== undefined) {
+        updates.quiz = JSON.stringify(materials.quiz);
+        updates.quizOptions = currentQuizOptions;
       }
-      const quizArray = await aiService.generateQuizWithOptions(existingSession.extracted_text, currentQuizOptions, { premium: authService.resolvePlan(req.user) === 'premium' });
-      regeneratedResults.quiz = JSON.stringify(quizArray);
-      // Optionally, store quiz_options used if the schema supports it.
-      // regeneratedResults.quiz_options = JSON.stringify(currentQuizOptions); 
-    }
-    
-    const updatedSession = await Session.updateAiContent(sessionId, regeneratedResults);
-    // Parse stringified JSON fields before sending back to client
-    const parsedUpdatedSession = {
-        ...updatedSession,
-        flashcards: updatedSession.flashcards ? JSON.parse(updatedSession.flashcards) : null,
-        quiz: updatedSession.quiz ? JSON.parse(updatedSession.quiz) : null,
-        summary_keywords: summaryKeywordsArray, // Send back keywords used
-        // quiz_options: updatedSession.quiz_options ? JSON.parse(updatedSession.quiz_options) : (quizOptions || null)
-    };
-    if (quizOptions) parsedUpdatedSession.quiz_options = quizOptions;
-    return parsedUpdatedSession;
+      const updated = await Session.updateAiContent(sessionId, updates);
+      return {
+        ...updated,
+        flashcards: updated.flashcards ? JSON.parse(updated.flashcards) : null,
+        quiz: updated.quiz ? JSON.parse(updated.quiz) : null,
+        warnings: materials.warnings,
+        summary_keywords: summaryKeywordsArray, quiz_options: currentQuizOptions,
+      };
     });
     res.status(200).json({ updatedSession: parsedUpdatedSession });
   } catch (error) {
@@ -315,16 +283,8 @@ router.post('/explain-snippet', async (req, res) => {
 // --- Get User's Saved Sessions ---
 router.get('/sessions', authenticateToken, async (req, res) => {
   try {
-    const sessions = await Session.findByUserId(req.user.id);
-    // Parse JSON fields for client
-    const parsedSessions = sessions.map(session => ({
-      ...session,
-      flashcards: session.flashcards ? JSON.parse(session.flashcards) : null,
-      quiz: session.quiz ? JSON.parse(session.quiz) : null,
-      // summary_keywords might be stored or derived; assuming not directly stored for now on list view
-      // quiz_options: session.quiz_options ? JSON.parse(session.quiz_options) : null,
-    }));
-    res.status(200).json({ sessions: parsedSessions });
+    const page = await Session.listSummaries(req.user.id, { before: req.query.before, limit: req.query.limit });
+    res.status(200).json(page);
   } catch (error) {
     console.error("[/sessions GET] Error:", error.message, error.stack ? error.stack.substring(0,300) : '');
     res.status(error.statusCode || 500).json({ message: 'Failed to retrieve sessions.' });
@@ -346,6 +306,7 @@ router.get('/sessions/:id', authenticateToken, async (req, res) => {
         ...session,
         flashcards: session.flashcards ? JSON.parse(session.flashcards) : null,
         quiz: session.quiz ? JSON.parse(session.quiz) : null,
+        quiz_options: session.quiz_options ? JSON.parse(session.quiz_options) : null,
         // summary_keywords can be re-derived or stored if needed for dashboard modal later
         // quiz_options: session.quiz_options ? JSON.parse(session.quiz_options) : null,
     };
@@ -401,15 +362,14 @@ router.post('/flashcard-review', authenticateToken, async (req, res) => {
     if (!card || !card.term) {
       return res.status(400).json({ message: 'Flashcard data is required.' });
     }
-    const existing = await FlashcardReview.findOne(req.user.id, sessionId || null, card.term);
-    const next = reviewCard(existing || {}, quality);
-    const saved = await FlashcardReview.upsert({
-      userId: req.user.id,
-      sessionId: sessionId || null,
-      cardKey: card.term,
-      term: card.term,
-      review: next,
-    });
+    if (sessionId != null) {
+      if (!Number.isSafeInteger(Number(sessionId)) || Number(sessionId) < 1) return res.status(400).json({ message: 'Invalid session ID.' });
+      const session = await Session.findById(Number(sessionId));
+      if (!session) return res.status(404).json({ message: 'Session not found.' });
+      assertOwnsRecord(session.user_id, req.user.id);
+    }
+    if (!Number.isFinite(Number(quality)) || Number(quality) < 0 || Number(quality) > 5) return res.status(400).json({ message: 'Quality must be a number from 0 to 5.' });
+    const saved = await FlashcardReview.review({ userId: req.user.id, sessionId: sessionId || null, cardKey: card.term, quality: Number(quality) });
     res.status(200).json({ review: saved });
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to save review.' });

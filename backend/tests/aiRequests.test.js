@@ -343,3 +343,64 @@ test('free file processing bundles selected outputs and saves the normalized ses
   assert.equal(JSON.parse(saved.quiz)[0].id, 'q1');
   assert.equal(result.warnings.length, 1);
 });
+
+test('queued requests cancel promptly without contacting Google or retaining their slot', async () => {
+  const finishes = [];
+  let calls = 0;
+  const h = harness(async () => {
+    calls++;
+    if (calls > 2) return response(200, success);
+    return new Promise(resolve => finishes.push(() => resolve(response(200, success))));
+  });
+  const busy = [h.request({}, options), h.request({}, options)];
+  await new Promise(setImmediate);
+  const controller = new AbortController();
+  const queued = h.request({}, { ...options, signal: controller.signal });
+  controller.abort();
+  await assert.rejects(queued, error => error.statusCode === 499);
+  assert.equal(calls, 2);
+  while (finishes.length) finishes.shift()();
+  await Promise.all(busy);
+  await h.request({}, options);
+  assert.equal(calls, 3);
+});
+
+test('the provider queue rejects overload and bounds Premium concurrency', async () => {
+  const finishes = [];
+  const h = harness(async () => new Promise(resolve => finishes.push(() => resolve(response(200, success)))), { maxQueued: 1 });
+  const premium = { ...options, premium: true };
+  const pending = Array.from({ length: 5 }, () => h.request({}, premium));
+  await new Promise(setImmediate);
+  assert.equal(finishes.length, 4);
+  await assert.rejects(h.request({}, premium), error => error.statusCode === 503);
+  finishes.shift()();
+  await new Promise(setImmediate);
+  while (finishes.length) finishes.shift()();
+  await Promise.all(pending);
+});
+
+test('disconnecting during a provider request does not retry or switch models', async () => {
+  let calls = 0;
+  const controller = new AbortController();
+  const h = harness(async (_url, init) => {
+    calls++;
+    return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' }))));
+  });
+  const pending = h.request({}, { ...options, signal: controller.signal });
+  await new Promise(setImmediate);
+  controller.abort();
+  await assert.rejects(pending, error => error.statusCode === 499);
+  assert.equal(calls, 1);
+});
+
+test('cancellation after admission but before dispatch refunds the reservation without contacting Google', async () => {
+  const controller = new AbortController();
+  let calls = 0, refunded;
+  const h = harness(async () => { calls++; return response(200, success); }, {
+    beforeRequest: async () => { controller.abort(); return { fixtureReservation: 1 }; },
+    onUnusedReservation: reservation => { refunded = reservation; },
+  });
+  await assert.rejects(h.request({}, { ...options, signal: controller.signal }), error => error.statusCode === 499);
+  assert.equal(calls, 0);
+  assert.deepEqual(refunded, { fixtureReservation: 1 });
+});

@@ -115,6 +115,7 @@ function updateOverview(quiz) {
     domRefs.shareLink.setAttribute('href', quiz.quizUrl);
 
     const metaPieces = [];
+    metaPieces.push(`<span class="inline-flex items-center px-2 py-1 bg-slate-100 text-slate-600 rounded-full">${quiz.isPublic ? 'Public quiz' : 'Private quiz - only you can open it'}</span>`);
     if (quiz.topic) metaPieces.push(`<span class="inline-flex items-center px-2 py-1 bg-slate-100 text-slate-600 rounded-full">${escapeHtml(quiz.topic)}</span>`);
     if (quiz.questionCount !== undefined) metaPieces.push(`<span class="inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-600 rounded-full">${quiz.questionCount} questions</span>`);
     if (quiz.quizOptions?.difficulty) metaPieces.push(`<span class="inline-flex items-center px-2 py-1 bg-amber-100 text-amber-600 rounded-full">Difficulty: ${escapeHtml(quiz.quizOptions.difficulty)}</span>`);
@@ -279,8 +280,13 @@ window.generatePersonalizedQuizFromPremade = async function() {
 
 async function loadPremadeList(searchTerm) {
     try {
-        const response = await apiListPremadeQuizzes(searchTerm);
-        premadeQuizzesCache = response.quizzes || [];
+        const [response, mine] = await Promise.all([
+            apiListPremadeQuizzes(searchTerm),
+            isUserLoggedIn() ? apiListMyPremadeQuizzes() : Promise.resolve({ quizzes: [] }),
+        ]);
+        const own = (mine.quizzes || []).filter(quiz => !searchTerm || `${quiz.title} ${quiz.description || ''}`.toLowerCase().includes(searchTerm.toLowerCase()));
+        (mine.quizzes || []).forEach(quiz => myQuizSlugs.add(quiz.slug));
+        premadeQuizzesCache = [...new Map([...(response.quizzes || []), ...own].map(quiz => [quiz.slug, quiz])).values()];
         renderPremadeList(premadeQuizzesCache, selectedPremadeQuiz?.slug);
     } catch (error) {
         console.error('Failed to load premade quizzes:', error);
@@ -392,6 +398,7 @@ async function handlePremadeCreateSubmit(event) {
             description,
             customInstructions: keyInstructions,
             sourceText,
+            isPublic: domRefs.creatorForm.premadePublic.checked,
             tags: tagsInput ? tagsInput.split(',').map(tag => tag.trim()).filter(Boolean) : [],
             quizOptions: {
                 questionTypes,
@@ -402,8 +409,9 @@ async function handlePremadeCreateSubmit(event) {
         const response = await apiCreatePremadeQuiz(payload);
         const quiz = response.quiz;
         if (quiz && quiz.quizUrl) {
+            myQuizSlugs.add(quiz.slug);
             const shareLink = `${window.location.origin}${quiz.quizUrl}`;
-            showMessage('premadeQuizFormMessage', `Premade quiz ready! Share link: ${shareLink}`, 'success', 8000);
+            showMessage('premadeQuizFormMessage', quiz.isPublic ? `Public quiz ready! Share link: ${shareLink}` : 'Private quiz ready. Only you can open it; publish it through the quiz settings when ready.', 'success', 8000);
             domRefs.creatorForm.reset();
             const defaultType = domRefs.creatorForm.querySelector('input[name="premadeQuestionType"][value="multiple_choice"]');
             if (defaultType) defaultType.checked = true;

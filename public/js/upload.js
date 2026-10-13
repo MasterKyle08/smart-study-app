@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let filesToProcess = [];
     let pendingVisionFromPdf = [];
+    let ocrWorkerPromise = null;
+    let ocrStatus = null;
     const MAX_FILE_SIZE = 10 * 1024 * 1024;
     const MAX_OCR_PDF_PAGES = 8;
     const MAX_VISION_IMAGES = 3;
@@ -189,17 +191,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function ocrSource(source, onStatus) {
-        const worker = await createOcrWorker(onStatus);
+        ocrStatus = onStatus;
+        if (!ocrWorkerPromise) ocrWorkerPromise = createOcrWorker(status => ocrStatus?.(status));
+        const worker = await ocrWorkerPromise;
         try {
             const { data: { text } } = await worker.recognize(source);
             return text || '';
         } finally {
-            try { await worker.terminate(); } catch (_err) { /* ignore */ }
+            ocrStatus = null;
         }
     }
 
     async function renderPdfPageToCanvas(page) {
         const viewport = page.getViewport({ scale: 1.7 });
+        if (viewport.width * viewport.height > 12000000) throw new Error('This PDF page is too large to render safely. Resize it or upload smaller pages.');
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d', { willReadFrequently: true });
         canvas.width = viewport.width;
@@ -221,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const htmlResult = await mammoth.convertToHtml({ arrayBuffer }, {
                 convertImage: mammoth.images.imgElement(async (image) => {
                     const base64 = await image.read('base64');
-                    if (images.length < MAX_VISION_IMAGES) {
+                    if (images.length < MAX_VISION_IMAGES && ['image/png', 'image/jpeg', 'image/webp'].includes(image.contentType) && base64.length <= 3000000) {
                         images.push({ mimeType: image.contentType || 'image/png', data: base64 });
                     }
                     return { src: `data:${image.contentType};base64,${base64}` };
@@ -244,48 +249,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (type === 'application/pdf') {
-            if (typeof pdfjsLib === 'undefined') {
+            const pdfjsLib = await window.loadPdfReader();
+            if (!pdfjsLib) {
                 throw new Error('PDF.js failed to load. Refresh the page and try again.');
             }
             const typedArray = new Uint8Array(await file.arrayBuffer());
-            const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
-            let fullText = '';
-            for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-                if (typeof window.showProcessingStatus === 'function') {
-                    window.showProcessingStatus('processingStatus', `Reading PDF page ${pageNumber}/${pdf.numPages}...`, true);
-                }
-                const page = await pdf.getPage(pageNumber);
-                const textContent = await page.getTextContent();
-                const pageText = textContent.items.map((item) => item.str).join(' ').trim();
-                fullText += `${pageText}\n`;
-            }
-
-            const compact = fullText.replace(/\s+/g, ' ').trim();
-            const looksScanned = compact.length < Math.max(80, pdf.numPages * 40);
-            if (looksScanned) {
-                const pagesToOcr = Math.min(pdf.numPages, MAX_OCR_PDF_PAGES);
-                let ocrText = '';
-                for (let pageNumber = 1; pageNumber <= pagesToOcr; pageNumber += 1) {
+            const loadingTask = pdfjsLib.getDocument({ data: typedArray, isEvalSupported: false, cMapUrl: '/vendor/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: '/vendor/pdfjs/standard_fonts/', wasmUrl: '/vendor/pdfjs/wasm/', maxImageSize: 16000000 });
+            try {
+                const pdf = await loadingTask.promise;
+                let fullText = '';
+                for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
                     if (typeof window.showProcessingStatus === 'function') {
-                        window.showProcessingStatus('processingStatus', `Worksheet looks scanned. OCRing PDF page ${pageNumber}/${pagesToOcr}...`, true);
+                        window.showProcessingStatus('processingStatus', `Reading PDF page ${pageNumber}/${pdf.numPages}...`, true);
                     }
                     const page = await pdf.getPage(pageNumber);
-                    const canvas = await renderPdfPageToCanvas(page);
-                    if (pendingVisionFromPdf.length < MAX_VISION_IMAGES) {
-                        try { pendingVisionFromPdf.push(await canvasToVisionImage(canvas)); } catch (_err) { /* OCR still runs */ }
-                    }
-                    ocrText += `${await ocrSource(canvas, (status) => {
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map((item) => item.str).join(' ').trim();
+                    fullText += `${pageText}\n`;
+                }
+
+                const compact = fullText.replace(/\s+/g, ' ').trim();
+                const looksScanned = compact.length < Math.max(80, pdf.numPages * 40);
+                if (looksScanned) {
+                    const pagesToOcr = Math.min(pdf.numPages, MAX_OCR_PDF_PAGES);
+                    let ocrText = '';
+                    for (let pageNumber = 1; pageNumber <= pagesToOcr; pageNumber += 1) {
                         if (typeof window.showProcessingStatus === 'function') {
-                            window.showProcessingStatus('processingStatus', `Page ${pageNumber}: ${status}`, true);
+                            window.showProcessingStatus('processingStatus', `Worksheet looks scanned. OCRing PDF page ${pageNumber}/${pagesToOcr}...`, true);
                         }
-                    })}\n`;
+                        const page = await pdf.getPage(pageNumber);
+                        const canvas = await renderPdfPageToCanvas(page);
+                        if (pendingVisionFromPdf.length < MAX_VISION_IMAGES) {
+                            try { pendingVisionFromPdf.push(await canvasToVisionImage(canvas)); } catch (_err) { /* OCR still runs */ }
+                        }
+                        ocrText += `${await ocrSource(canvas, (status) => {
+                            if (typeof window.showProcessingStatus === 'function') {
+                                window.showProcessingStatus('processingStatus', `Page ${pageNumber}: ${status}`, true);
+                            }
+                        })}\n`;
+                    }
+                    if (pdf.numPages > MAX_OCR_PDF_PAGES) {
+                        ocrText += `\n[Only the first ${MAX_OCR_PDF_PAGES} pages were scanned for handwritten or image-based PDFs.]\n`;
+                    }
+                    return ocrText;
                 }
-                if (pdf.numPages > MAX_OCR_PDF_PAGES) {
-                    ocrText += `\n[Only the first ${MAX_OCR_PDF_PAGES} pages were scanned for handwritten or image-based PDFs.]\n`;
-                }
-                return ocrText;
-            }
-            return fullText;
+                return fullText;
+            } finally { await loadingTask.destroy(); }
         }
 
         if (type === 'image/jpeg' || type === 'image/png' || type === 'image/webp') {
@@ -361,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 combinedText += `${pasteNotesInput.value.trim()}\n\n`;
             }
 
-            if (combinedText.replace(/\s+/g, ' ').trim().length < 20) {
+            if (combinedText.replace(/\s+/g, ' ').trim().length < 20 && !visionImages.length) {
                 if (typeof window.showMessage === 'function') {
                     window.showMessage('processingStatus', 'Not enough readable text was found. If this is a photo or scanned worksheet, try a clearer image, or paste the notes instead.', 'error');
                 }
@@ -369,9 +378,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             window.currentExtractedTextForQuiz = combinedText.trim();
-            setProgress(62, visionImages.length ? 'Sending worksheet image(s) to Gemma 4 vision, then generating materials...' : 'Generating study materials...');
+            if (combinedText.length > 120000) throw new Error('These notes exceed the upload limit. Split them into smaller uploads for complete coverage.');
+            const neededVisionImages = combinedText.replace(/\s+/g, ' ').trim().length < 250 ? visionImages : [];
+            setProgress(62, neededVisionImages.length ? 'Sending worksheet image(s) to Gemma 4 vision, then generating materials...' : 'Generating study materials...');
             if (typeof window.showProcessingStatus === 'function') {
-                window.showProcessingStatus('processingStatus', visionImages.length
+                window.showProcessingStatus('processingStatus', neededVisionImages.length
                     ? 'Using Gemma 4 vision (1 extra request) plus generation...'
                     : 'Text extracted. Generating study materials... this can take up to a minute.', true);
             }
@@ -388,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 summaryAudiencePurpose,
                 summaryNegativeKeywords,
                 quizOptions,
-                visionImages
+                neededVisionImages
             );
             results.extractedText = combinedText.trim();
             results.quizOptions = quizOptions;
@@ -402,9 +413,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             const message = error.data?.message || error.message || 'An error occurred during processing.';
             if (typeof window.showMessage === 'function') window.showMessage('processingStatus', message, 'error');
-            if (typeof window.hideProcessingStatus === 'function') window.hideProcessingStatus('processingStatus');
             hideProgress();
         } finally {
+            if (ocrWorkerPromise) {
+                try { const worker = await ocrWorkerPromise; await worker.terminate(); } catch (_error) { /* failed worker is discarded */ }
+                ocrWorkerPromise = null;
+                ocrStatus = null;
+            }
             updateProcessButtonState();
         }
     });

@@ -10,6 +10,7 @@ backups/
 oracle-upload.zip
 /.deploy/
 /.local/
+/public/vendor/pdfjs/
 /playwright-report/
 /test-results/
 *service-account*.json
