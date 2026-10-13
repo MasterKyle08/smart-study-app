@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
       hideProcessingStatus(statusId);
       const run = response.usageThisRun;
       const extra = run && run.requests
-        ? ` This run: ${run.requests} request(s), ${Number(run.inputTokens).toLocaleString()} in / ${Number(run.outputTokens).toLocaleString()} out.`
+        ? ` This run: ${run.requests} successful API response(s), ${Number(run.inputTokens).toLocaleString()} in / ${Number(run.outputTokens).toLocaleString()} out. Rejected attempts are not included.`
         : '';
       showMessage(statusId, `${response.quiz.length} questions ready.${extra}`, 'success', 5000);
       if (typeof window.refreshUsageMeter === 'function') window.refreshUsageMeter(run);

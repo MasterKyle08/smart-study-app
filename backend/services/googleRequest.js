@@ -1,5 +1,23 @@
 const nodeFetch = require('node-fetch');
 
+function estimateInputTokens(payload) {
+  // Conservative text estimate, reconciled with Google's promptTokenCount on
+  // success. Image tokenization varies; never count base64 bytes as text.
+  const parts = [...(payload.contents || []).flatMap(content => content.parts || []), ...(payload.systemInstruction?.parts || [])];
+  const chars = parts.reduce((total, part) => total + String(part.text || '').length, 0);
+  const images = parts.filter(part => part.inlineData || part.fileData).length;
+  return Math.ceil((chars + JSON.stringify(payload.generationConfig?.responseSchema || {}).length) / 3) + 256 + images * 1500;
+}
+
+function quotaError(waitMs, { daily = false, inputTokens = false, limit } = {}) {
+  const seconds = Math.max(1, Math.ceil(waitMs / 1000));
+  const label = inputTokens ? `input-token limit${limit ? ` (${limit.toLocaleString()} tokens/minute)` : ''}` : 'rate limit';
+  const message = daily
+    ? 'Google\'s daily free AI quota is exhausted. Check AI Studio for the reset time.'
+    : `Google's free AI ${label} was reached. Try again in about ${seconds} seconds. Local testing and the live site share the same Google project quota.`;
+  return Object.assign(new Error(message), { statusCode: 429, retryDelayMs: waitMs, dailyQuota: daily });
+}
+
 function createGoogleRequester({
   fetch = nodeFetch,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -7,11 +25,14 @@ function createGoogleRequester({
   random = Math.random,
   log = record => console.info('[google-ai]', JSON.stringify(record)),
   freeIntervalMs = Math.max(0, Number(process.env.GOOGLE_FREE_REQUEST_INTERVAL_MS ?? 4000)),
+  freeInputTokensPerMinute = Math.max(1, Number(process.env.GOOGLE_FREE_INPUT_TOKENS_PER_MINUTE || 14000)),
   primaryTimeoutMs = Math.max(1000, Number(process.env.GOOGLE_FREE_PRIMARY_TIMEOUT_MS || 25000)),
   cooldownMs = Math.max(1000, Number(process.env.GOOGLE_FREE_FALLBACK_COOLDOWN_MS || 300000)),
   retries = 2,
 } = {}) {
   const unavailableUntil = new Map();
+  const tokenWindows = new Map();
+  const quotaPauses = new Map();
   let nextFreeStart = 0;
   let active = 0;
   const waiting = [];
@@ -41,15 +62,42 @@ function createGoogleRequester({
       let unlock;
       let timer;
       let providerStarted;
+      let reservation;
       const started = now();
       try {
         if (!premium) {
           unlock = await acquire(deadline);
-          const wait = Math.max(0, nextFreeStart - now());
-          if (wait >= deadline - now()) throw Object.assign(new Error('AI queue took too long. Try again shortly.'), { statusCode: 504 });
-          nextFreeStart = Math.max(now(), nextFreeStart) + freeIntervalMs;
-          if (wait) await sleep(wait);
-          if (fallbackModelName && (unavailableUntil.get(modelName) || 0) > now()) currentModel = fallbackModelName;
+          const estimated = estimateInputTokens(payload);
+          // Recheck all gates after every sleep: another request may discover a
+          // quota cooldown while this one is already waiting to start.
+          while (true) {
+            if (fallbackModelName && (unavailableUntil.get(modelName) || 0) > now()) currentModel = fallbackModelName;
+            const pause = quotaPauses.get(currentModel);
+            if (pause?.daily && pause.until > now()) throw quotaError(pause.until - now(), pause);
+            const window = (tokenWindows.get(currentModel) || []).filter(entry => entry.at + 60000 > now());
+            tokenWindows.set(currentModel, window);
+            const budget = pause?.budget || freeInputTokensPerMinute;
+            let used = window.reduce((sum, entry) => sum + entry.tokens, 0);
+            let tokenWait = 0;
+            for (const entry of window) {
+              if (used + estimated <= budget) break;
+              tokenWait = entry.at + 60000 - now();
+              used -= entry.tokens;
+            }
+            const quotaWait = Math.max(tokenWait, (pause?.until || 0) - now(), 0);
+            const wait = Math.max(quotaWait, nextFreeStart - now(), 0);
+            if (wait >= deadline - now()) {
+              if (quotaWait) throw quotaError(quotaWait, { ...pause, inputTokens: tokenWait > 0 || pause?.inputTokens });
+              throw Object.assign(new Error('AI queue took too long. Try again shortly.'), { statusCode: 504 });
+            }
+            if (wait) { await sleep(wait); continue; }
+            // A single large estimated request is allowed through an empty
+            // window. The estimate is a pacing aid, not Google's tokenizer.
+            reservation = { at: now(), tokens: estimated };
+            window.push(reservation);
+            nextFreeStart = now() + freeIntervalMs;
+            break;
+          }
         }
         const remaining = deadline - now();
         if (remaining <= 0) throw Object.assign(new Error('The AI took too long to respond.'), { statusCode: 504 });
@@ -64,7 +112,9 @@ function createGoogleRequester({
           signal: controller.signal,
         });
         const data = await response.json().catch(() => ({}));
-        log({ model: currentModel, status: response.status, attempt: attempt + 1, elapsedMs: now() - started, queueMs: providerStarted - started, providerMs: now() - providerStarted, finishReason: data.candidates?.[0]?.finishReason });
+        const inputTokens = Number(data.usageMetadata?.promptTokenCount || data.usage_metadata?.prompt_token_count || 0);
+        if (reservation && inputTokens > 0) reservation.tokens = inputTokens;
+        log({ model: currentModel, status: response.status, attempt: attempt + 1, elapsedMs: now() - started, queueMs: providerStarted - started, providerMs: now() - providerStarted, finishReason: data.candidates?.[0]?.finishReason, inputTokens: inputTokens || undefined });
         if (!response.ok) {
           const error = new Error(data.error?.message || `Google AI request failed (${response.status}).`);
           error.googleStatus = response.status;
@@ -74,8 +124,25 @@ function createGoogleRequester({
           const retryHeader = response.headers?.get('retry-after');
           const headerSeconds = Number(retryHeader);
           const headerDelay = retryHeader ? (Number.isFinite(headerSeconds) ? headerSeconds * 1000 : Math.max(0, Date.parse(retryHeader) - now())) : 0;
-          error.retryDelayMs = Math.max(Number.isFinite(headerDelay) ? headerDelay : 0, (parseFloat(retryInfo?.retryDelay) || 0) * 1000);
+          error.retryDelayMs = Math.ceil(Math.max(Number.isFinite(headerDelay) ? headerDelay : 0, (parseFloat(retryInfo?.retryDelay) || 0) * 1000));
           error.dailyQuota = /per.?day|daily/i.test(JSON.stringify(details) + ' ' + error.message);
+          if (!premium && response.status === 429) {
+            const violations = details.flatMap(item => item.violations || []);
+            const tokenViolation = violations.find(item => /input_token/i.test(item.quotaMetric || item.quotaId || ''));
+            const inputQuota = Boolean(tokenViolation) || /input_token/i.test(error.message);
+            const limit = Number(tokenViolation?.quotaValue) || undefined;
+            const oldPause = quotaPauses.get(currentModel);
+            const wait = error.retryDelayMs || 60000;
+            const pause = {
+              until: Math.max(oldPause?.until || 0, now() + wait), daily: error.dailyQuota,
+              inputTokens: inputQuota, limit,
+              budget: limit ? Math.min(freeInputTokensPerMinute, Math.max(1, Math.floor(limit * 0.9))) : oldPause?.budget,
+            };
+            quotaPauses.set(currentModel, pause);
+            const friendly = quotaError(wait, pause);
+            friendly.googleStatus = 429;
+            throw friendly;
+          }
           throw error;
         }
         return { data, modelName: currentModel };
@@ -90,7 +157,7 @@ function createGoogleRequester({
           currentModel = fallbackModelName;
         }
         const networkFailure = error.name === 'FetchError' && /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/.test(error.code || '');
-        const transient = providerUnavailable || networkFailure || error.googleStatus === 408 || (error.googleStatus === 429 && !error.dailyQuota && (error.retryDelayMs || 0) <= 10000);
+        const transient = providerUnavailable || networkFailure || error.googleStatus === 408 || (error.googleStatus === 429 && !error.dailyQuota && (error.retryDelayMs || 0) <= (premium ? 10000 : 60000));
         const delay = Math.max(error.retryDelayMs || 0, 1000 * (2 ** attempt) + Math.floor(random() * 250));
         if (!transient || attempt >= retries || now() + delay >= deadline) throw error;
         if (timer) { clearTimeout(timer); timer = null; }

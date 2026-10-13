@@ -500,7 +500,7 @@ function displayResults(results) {
         const notices = [];
         if (results.usageThisRun && results.usageThisRun.requests) {
             const src = results.usageThisRun.source === 'api' ? 'from Google’s usage data' : (results.usageThisRun.source === 'estimate' ? 'estimated from prompt size' : 'Google usage + estimate');
-            notices.push(`This run: ${results.usageThisRun.requests} API request(s), ${Number(results.usageThisRun.inputTokens).toLocaleString()} input tokens, ${Number(results.usageThisRun.outputTokens).toLocaleString()} output tokens (${src}).`);
+            notices.push(`This run: ${results.usageThisRun.requests} successful API response(s), ${Number(results.usageThisRun.inputTokens).toLocaleString()} input tokens, ${Number(results.usageThisRun.outputTokens).toLocaleString()} output tokens (${src}). Rejected attempts are not included.`);
         }
         if (Array.isArray(results.warnings) && results.warnings.length) notices.push(results.warnings.join(' '));
         if (results.savedToAccount) notices.push('Saved to your dashboard.');

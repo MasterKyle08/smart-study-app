@@ -37,6 +37,8 @@ Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/s
 
 ## Local setup (new laptop)
 
+See [local development and review](LOCAL-DEVELOPMENT.md) for real free Gemma testing on localhost, dummy-user/shared-Turso limits, browser checks, and the review-before-push process. Coding agents must follow [AGENTS.md](AGENTS.md).
+
 For Oracle Cloud Ampere A1 on Ubuntu 26.04, follow the [Oracle hosting guide](deploy/oracle/README.md). It uses the prepared ZIP uploaded through FileZilla, a persistent `screen -S website` terminal for extraction/setup, Docker, and automatic HTTPS.
 
 The prepared Oracle address is `https://study.132-145-197-174.sslip.io`. Upload the private `.env.oracle` as the server `.env` after adding the Gmail app password; keep the local `.env` for development.
@@ -53,21 +55,23 @@ npm install
 npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Local development uses a separate login-signing key and skips startup migrations/cleanup against shared Turso. See the local guide for disabled integrations and dummy-user testing.
 
 | Script | What it does |
 |---|---|
 | `npm start` | Run the server |
 | `npm run dev` | Nodemon + Tailwind watch |
 | `npm test` | Unit tests |
-| `npm run tailwind:build` | Rebuild `public/css/style.css` |
+| `npm run tailwind:build` | Rebuild readable `public/css/style.css` |
+| `npm run tailwind:build:production` | Build minified production CSS |
+| `npm run test:ui` | Isolated browser and contrast checks |
 | `npm run init-db` | Create/migrate Turso tables |
 
-The database schema is also applied when the server starts.
+Production startup applies the database schema. Local startup checks the existing database without applying migrations or cleanup.
 
-### `.env` (local only)
+### Private configuration
 
-Required to boot:
+Local development reads private `.env.local` (or the existing `.env` as a fallback). It generates its own signing key in `.local/session.secret`. Production reads the server `.env` and requires its own `JWT_SECRET`. Google keys are needed for real AI, and Turso credentials are needed for database access:
 
 ```
 GOOGLE_API_KEY=

@@ -40,7 +40,28 @@ async function processUploadedText({
   const tasks = [];
   const failures = [];
 
-  if (wantsSummary) {
+  const bundleFreeOutputs = !premium && [wantsSummary, wantsFlashcards, wantsQuiz].filter(Boolean).length > 1;
+  if (bundleFreeOutputs) {
+    tasks.push(async () => {
+      try {
+        const materials = await aiService.generateStudyMaterials(extractedText, {
+          wantsSummary, wantsFlashcards, wantsQuiz,
+          summaryLengthPreference, summaryStylePreference, summaryKeywords,
+          summaryAudiencePurpose, summaryNegativeKeywords, quizOptions: quizOptions || {},
+        }, aiOptions);
+        Object.assign(results, materials);
+        generatedSummary = materials.summary || null;
+        generatedFlashcards = materials.flashcards || null;
+        generatedQuiz = materials.quiz || null;
+      } catch (aiError) {
+        console.error('[fileService] Study material generation failed:', aiError.message);
+        results.warnings.push(aiError.message);
+        failures.push(aiError);
+      }
+    });
+  }
+
+  if (wantsSummary && !bundleFreeOutputs) {
     tasks.push(async () => {
       try {
         generatedSummary = await aiService.generateSummary(
@@ -61,7 +82,7 @@ async function processUploadedText({
     });
   }
 
-  if (wantsFlashcards) {
+  if (wantsFlashcards && !bundleFreeOutputs) {
     tasks.push(async () => {
       try {
         generatedFlashcards = await aiService.generateFlashcards(extractedText, aiOptions);
@@ -74,7 +95,7 @@ async function processUploadedText({
     });
   }
 
-  if (wantsQuiz) {
+  if (wantsQuiz && !bundleFreeOutputs) {
     tasks.push(async () => {
       try {
         const currentQuizOptions = quizOptions || {
@@ -95,8 +116,7 @@ async function processUploadedText({
     });
   }
 
-  // Independent outputs can overlap; the shared free-model transport also
-  // limits concurrency and spaces requests across every active study job.
+  // Premium outputs can overlap; free multi-output uploads use one task.
   let taskIndex = 0;
   async function worker() {
     while (taskIndex < tasks.length) {

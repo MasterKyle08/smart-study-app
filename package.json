@@ -7,9 +7,11 @@
     "start": "node server.js",
     "dev": "concurrently \"nodemon server.js\" \"npm run tailwind:watch\"",
     "init-db": "node ./backend/models/db.js init",
-    "test": "node --test ./backend/tests/studyContent.test.js ./backend/tests/admin.test.js ./backend/tests/aiRequests.test.js",
+    "test": "node --test ./backend/tests/studyContent.test.js ./backend/tests/admin.test.js ./backend/tests/aiRequests.test.js ./backend/tests/environment.test.js",
     "test:oracle": "node --test ./backend/tests/oracle.test.js",
-    "tailwind:build": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css --minify",
+    "test:ui": "playwright test",
+    "tailwind:build": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css",
+    "tailwind:build:production": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css --minify",
     "tailwind:watch": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css --watch"
   },
   "keywords": [
@@ -38,6 +40,7 @@
     "stripe": "^22.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
     "nodemon": "^3.0.2",

@@ -9,6 +9,9 @@ node_modules/
 backups/
 oracle-upload.zip
 /.deploy/
+/.local/
+/playwright-report/
+/test-results/
 *service-account*.json
 gcp-key.json
 

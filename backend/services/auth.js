@@ -18,6 +18,7 @@ function premiumEmails() {
 }
 
 function resolvePlan(user) {
+  if (process.env.NODE_ENV !== 'production' && process.env.LOCAL_FREE_ONLY === '1') return 'free';
   if (!user) return 'free';
   if (user.email && premiumEmails().includes(String(user.email).toLowerCase())) return 'premium';
   return user.plan === 'premium' ? 'premium' : 'free';

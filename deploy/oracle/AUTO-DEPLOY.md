@@ -2,6 +2,8 @@
 
 Once configured, every push to `main` in `MasterKyle08/smart-study-app` runs tests, uploads the committed source, builds the ARM image on Oracle, and restarts the site. The workflow also supports a manual **Run workflow** from the main branch. Deployment causes a brief restart.
 
+The user's default preference is to leave changes for review. Agents should not commit or push until asked; see the project-root `AGENTS.md`. Unit, production-smoke, and isolated browser/readability checks run before upload.
+
 Your ZIP-based server does not need a Git checkout. The upload replaces only app source directories/files. The existing server `.env`, backups, Turso database, and Docker certificate volumes are retained. Add future app secrets directly to the server `.env`, then run the normal deployment script to apply them.
 
 ## 1. One-time preparation in PuTTY / Screen
@@ -38,7 +40,7 @@ Display the dedicated private key in your own terminal:
 cat ~/.ssh/github_oracle_deploy
 ```
 
-Copy the entire block privately, including the BEGIN/END lines. Store it in GitHub Actions as **ORACLE_SSH_KEY**. Do not put it in a repository file or send it in chat.
+Copy the entire block privately, including the BEGIN/END lines and **every original line break**. Store it in GitHub Actions as **ORACLE_SSH_KEY**. It is a multiline private key; do not collapse it into one line, remove spacing, add quotes, or paste the `.pub` key or a PuTTY `.ppk` file. Do not put it in a repository file or send it in chat.
 
 Display the server's public SSH host key:
 
@@ -94,6 +96,7 @@ For later updates, commit and push to main. GitHub handles the transfer and depl
 ## Troubleshooting
 
 - **Missing secret:** add both names exactly as listed.
+- **Load key / error in libcrypto:** update ORACLE_SSH_KEY with the complete original multiline output of `cat ~/.ssh/github_oracle_deploy`, including BEGIN/END lines. ORACLE_SSH_HOST_KEY is the separate single-line public key. The workflow normalizes Windows CRLF line endings and validates the private key without printing it.
 - **SSH timeout:** confirm port 22 allows the runner and IP is still correct.
 - **Permission denied (publickey):** confirm the matching public key was appended to ubuntu's authorized_keys and the private key is in ORACLE_SSH_KEY.
 - **Host-key mismatch:** verify the server identity in PuTTY before updating ORACLE_SSH_HOST_KEY. Recreating the instance normally changes its host key.

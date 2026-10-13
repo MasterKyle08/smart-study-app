@@ -4,10 +4,11 @@
  * Initializes the Express app, database (now Turso), and starts the server.
  */
 
-require('dotenv').config(); // Load environment variables from .env file
+const { configureRuntime } = require('./backend/config/environment');
+const runtime = configureRuntime();
 
 const app = require('./backend/app'); // Import the configured Express app
-const { init: initDB, close: closeDB } = require('./backend/models/db'); // Import Turso DB functions
+const { db, init: initDB, close: closeDB } = require('./backend/models/db');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -17,19 +18,27 @@ const HOST = process.env.HOST || '0.0.0.0';
  */
 async function startServer() {
   try {
-    // Initialize the database (create tables if they don't exist using Turso client)
-    await initDB(); // initDB is now async
-    console.log('Turso Database initialized successfully.');
+    // Production applies the schema; local startup checks the shared database.
+    if (runtime.production) {
+      await initDB();
+      console.log('Turso Database initialized successfully.');
+    } else {
+      await db.execute('PRAGMA foreign_keys = ON;');
+      await db.execute('SELECT id FROM Users LIMIT 0');
+      console.log('Local development: real free Gemma, existing Turso, separate login tokens. Startup migrations and cleanup are disabled.');
+    }
     if (!process.env.ADMIN_EMAIL) {
       console.warn('ADMIN_EMAIL is not set. Set it to your account email to bootstrap the owner admin (cannot be demoted).');
     }
-    try {
-      const Session = require('./backend/models/Session');
-      const hours = parseInt(process.env.ANONYMOUS_SESSION_TTL_HOURS || '24', 10);
-      const removed = await Session.deleteAnonymousOlderThan(hours);
-      if (removed) console.log(`Removed ${removed} expired anonymous session(s).`);
-    } catch (cleanupError) {
-      console.warn('Anonymous session cleanup skipped:', cleanupError.message);
+    if (runtime.production) {
+      try {
+        const Session = require('./backend/models/Session');
+        const hours = parseInt(process.env.ANONYMOUS_SESSION_TTL_HOURS || '24', 10);
+        const removed = await Session.deleteAnonymousOlderThan(hours);
+        if (removed) console.log(`Removed ${removed} expired anonymous session(s).`);
+      } catch (cleanupError) {
+        console.warn('Anonymous session cleanup skipped:', cleanupError.message);
+      }
     }
 
     // Start the Express server

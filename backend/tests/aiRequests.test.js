@@ -40,7 +40,7 @@ test('authentication, invalid requests and daily/long quota waits fail without e
   for (const [status, details, retryAfter] of [
     [400, [], null], [403, [], null],
     [429, [{ violations: [{ quotaId: 'GenerateRequestsPerDay' }] }], null],
-    [429, [], '60'],
+    [429, [], '120'],
   ]) {
     let calls = 0;
     const h = harness(async () => { calls += 1; return response(status, { error: { message: 'Request rejected', details } }, retryAfter); });
@@ -183,13 +183,13 @@ test('premium JSON authentication error is not followed by another format reques
 test('all rate-limited study outputs preserve HTTP 429', async () => {
   const fail = async () => { throw Object.assign(new Error('Quota exhausted'), { statusCode: 429 }); };
   const file = loadService('file.js', {
-    './ai': { generateSummary: fail, generateFlashcards: fail, generateQuizWithOptions: fail },
+    './ai': { generateStudyMaterials: fail, generateSummary: fail, generateFlashcards: fail, generateQuizWithOptions: fail },
     '../models/Session': { create: async () => { throw new Error('Should not save failed output'); } },
   });
   await assert.rejects(file.processUploadedText({ extractedText: 'Study notes', outputFormats: ['all'] }), error => error.statusCode === 429);
 });
 
-test('study outputs overlap with two workers and save one complete session', async () => {
+test('premium study outputs overlap with two workers and save one complete session', async () => {
   const started = [];
   const resolve = {};
   let saved;
@@ -198,7 +198,7 @@ test('study outputs overlap with two workers and save one complete session', asy
     './ai': { generateSummary: () => output('summary'), generateFlashcards: () => output('flashcards'), generateQuizWithOptions: () => output('quiz') },
     '../models/Session': { create: async row => { saved = row; return { id: 42 }; } },
   });
-  const pending = file.processUploadedText({ extractedText: 'Study notes', outputFormats: ['all'], originalFilename: 'notes.txt', originalContentType: 'text/plain', userId: 9 });
+  const pending = file.processUploadedText({ extractedText: 'Study notes', outputFormats: ['all'], originalFilename: 'notes.txt', originalContentType: 'text/plain', userId: 9, premium: true });
   assert.deepEqual(started, ['summary', 'flashcards']);
   resolve.summary('summary');
   await new Promise(setImmediate);
@@ -210,4 +210,136 @@ test('study outputs overlap with two workers and save one complete session', asy
   assert.equal(saved.summary, 'summary');
   assert.equal(JSON.parse(saved.flashcards)[0].term, 'API');
   assert.equal(JSON.parse(saved.quiz)[0].id, 'q1');
+});
+
+test('free requests pace input tokens over a minute and reconcile Google usage', async () => {
+  const h = harness(async () => response(200, { ...success, usageMetadata: { promptTokenCount: 4932, candidatesTokenCount: 100000 } }));
+  // Each estimate is about 5,250 tokens. Two actual inputs fit, three do not.
+  const payload = { contents: [{ parts: [{ text: 'a'.repeat(15000) }] }] };
+  await h.request(payload, options);
+  await h.request(payload, options);
+  await h.request(payload, options);
+  assert.deepEqual(h.sleeps, [60000]);
+  assert.equal(h.logs[2].queueMs, 60000);
+  assert.equal(h.logs[0].inputTokens, 4932);
+});
+
+test('input-token pacing counts attempted calls and respects the total deadline', async () => {
+  let calls = 0;
+  const h = harness(async () => { calls += 1; return response(500, { error: { message: 'Unavailable' } }); }, { freeInputTokensPerMinute: 700 });
+  const payload = { contents: [{ parts: [{ text: 'a'.repeat(450) }] }] };
+  await assert.rejects(h.request(payload, { ...options, fallbackModelName: undefined, timeoutMs: 5000 }), error => error.statusCode === 429 && /seconds/.test(error.message));
+  assert.equal(calls, 1);
+  assert.deepEqual(h.sleeps, [1000]);
+});
+
+test('the reported minute quota waits for RetryInfo then retries the same free model', async () => {
+  const urls = [];
+  const h = harness(async url => {
+    urls.push(url);
+    return urls.length === 1 ? response(429, { error: {
+      message: 'Quota exceeded for input_token_count',
+      details: [
+        { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', quotaValue: '16000' }] },
+        { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '42.624227322s' },
+      ],
+    } }) : response(200, success);
+  });
+  await h.request({}, options);
+  assert.deepEqual(h.sleeps, [42625]);
+  assert.equal(urls[0], urls[1]);
+});
+
+test('a quota discovered during pacing blocks another queued request', async () => {
+  let time = 0;
+  const sleepers = [];
+  const starts = [];
+  const request = createGoogleRequester({
+    now: () => time, freeIntervalMs: 4000, retries: 0, log: () => {},
+    sleep: ms => new Promise(resolve => sleepers.push({ ms, resolve })),
+    fetch: async () => {
+      starts.push(time);
+      return starts.length === 1 ? response(429, { error: { message: 'Quota exceeded' } }, '43') : response(200, success);
+    },
+  });
+  const first = assert.rejects(request({}, options), error => error.statusCode === 429 && /43 seconds/.test(error.message));
+  const second = request({}, options);
+  await new Promise(setImmediate);
+  assert.equal(starts.length, 1);
+  time = 4000;
+  sleepers.shift().resolve();
+  await new Promise(setImmediate);
+  assert.equal(starts.length, 1);
+  assert.equal(sleepers[0].ms, 39000);
+  time = 43000;
+  sleepers.shift().resolve();
+  await Promise.all([first, second]);
+  assert.deepEqual(starts, [0, 43000]);
+});
+
+test('free bundled outputs send the source once and preserve summary and quiz preferences', async () => {
+  const calls = [];
+  const ai = loadService('ai.js', {
+    './googleRequest': { createGoogleRequester: () => async (payload, requestOptions) => {
+      calls.push({ payload, requestOptions });
+      return { modelName: requestOptions.modelName, data: { candidates: [{ content: { parts: [{ text: JSON.stringify({
+        summary: 'A concise summary.', flashcards: [{ term: 'API', definition: 'An interface.' }],
+        quiz: [{ questionText: 'What is an API?', questionType: 'short_answer', correctAnswer: 'An interface.' }],
+      }) }] } }] } };
+    } },
+    './usage': { recordRequest: async () => {} },
+  });
+  const source = 'Unique source marker: API means application programming interface.';
+  const result = await ai.generateStudyMaterials(source, {
+    wantsSummary: true, wantsFlashcards: true, wantsQuiz: true,
+    summaryLengthPreference: 'long', summaryStylePreference: 'bullets', summaryKeywords: ['interfaces'],
+    summaryAudiencePurpose: 'a beginner', summaryNegativeKeywords: ['trivia'],
+    quizOptions: { numQuestions: 3, questionTypes: ['short_answer'], difficulty: 'hard' },
+  });
+  assert.equal(calls.length, 1);
+  const prompt = calls[0].payload.contents[0].parts[0].text;
+  assert.equal(prompt.split(source).length - 1, 1);
+  for (const text of ['250-350', 'bullet points', 'interfaces', 'a beginner', 'trivia', 'exactly 3', 'hard', 'short_answer']) assert.ok(prompt.includes(text), text);
+  assert.equal(result.summary, 'A concise summary.');
+  assert.equal(result.flashcards.length, 1);
+  assert.equal(result.quiz[0].questionType, 'short_answer');
+  assert.ok(result.warnings[0].includes('1 of 3'));
+  assert.equal(calls[0].requestOptions.premium, false);
+  assert.equal(calls[0].payload.generationConfig.thinkingConfig.thinkingLevel, 'minimal');
+});
+
+test('free bundles retain usable sections without extra regeneration calls', async () => {
+  let calls = 0;
+  const ai = loadService('ai.js', {
+    './googleRequest': { createGoogleRequester: () => async (_payload, requestOptions) => {
+      calls += 1;
+      return { modelName: requestOptions.modelName, data: { candidates: [{ content: { parts: [{ text: '{"summary":"Useful summary","flashcards":[],"quiz":[]}' }] } }] } };
+    } },
+    './usage': { recordRequest: async () => {} },
+  });
+  const result = await ai.generateStudyMaterials('Source', { wantsSummary: true, wantsFlashcards: true, wantsQuiz: true });
+  assert.equal(calls, 1);
+  assert.equal(result.summary, 'Useful summary');
+  assert.equal(result.warnings.length, 2);
+  assert.equal(result.quiz, undefined);
+});
+
+test('free file processing bundles selected outputs and saves the normalized session once', async () => {
+  const calls = [];
+  let saved;
+  const file = loadService('file.js', {
+    './ai': { generateStudyMaterials: async (...args) => {
+      calls.push(args);
+      return { summary: 'Summary', quiz: [{ id: 'q1' }], warnings: ['Flashcards: incomplete'] };
+    } },
+    '../models/Session': { create: async row => { saved = row; return { id: 42 }; } },
+  });
+  const result = await file.processUploadedText({ extractedText: 'Notes', outputFormats: ['all'], userId: 9, quizOptions: { numQuestions: 3 } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1].wantsQuiz, true);
+  assert.equal(calls[0][1].quizOptions.numQuestions, 3);
+  assert.equal(result.sessionId, 42);
+  assert.equal(saved.flashcards, null);
+  assert.equal(JSON.parse(saved.quiz)[0].id, 'q1');
+  assert.equal(result.warnings.length, 1);
 });

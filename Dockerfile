@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tailwind.config.js ./
 COPY public ./public
-RUN npm run tailwind:build && npm prune --omit=dev
+RUN npm run tailwind:build:production && npm prune --omit=dev
 
 FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production HOST=127.0.0.1 PORT=3000

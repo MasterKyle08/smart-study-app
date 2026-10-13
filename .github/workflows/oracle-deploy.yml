@@ -33,6 +33,11 @@ jobs:
           npm ci
           npm test
           npm run test:oracle
+      - name: Build styles and verify browser readability
+        run: |
+          npm run tailwind:build
+          npx playwright install --with-deps chromium
+          npm run test:ui
       - name: Package the committed application source
         shell: bash
         run: |
@@ -55,9 +60,16 @@ jobs:
           test -n "$ORACLE_SSH_HOST_KEY" || { echo 'Set repository secret ORACLE_SSH_HOST_KEY.' >&2; exit 1; }
           umask 077
           mkdir -p "$RUNNER_TEMP/oracle-ssh"
-          printf '%s\n' "$ORACLE_SSH_KEY" > "$RUNNER_TEMP/oracle-ssh/key"
+          printf '%s\n' "$ORACLE_SSH_KEY" | tr -d '\r' > "$RUNNER_TEMP/oracle-ssh/key"
+          if ! grep -Eq -- '^-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----$' "$RUNNER_TEMP/oracle-ssh/key"; then
+            echo 'ORACLE_SSH_KEY must be the complete multiline private key, with original BEGIN/END lines and line breaks. Do not paste a public key, a PuTTY .ppk file, or a key collapsed into one line.' >&2
+            exit 1
+          fi
           printf '%s %s\n' "$ORACLE_HOST" "$ORACLE_SSH_HOST_KEY" > "$RUNNER_TEMP/oracle-ssh/known_hosts"
-          ssh-keygen -y -f "$RUNNER_TEMP/oracle-ssh/key" > /dev/null
+          if ! ssh-keygen -y -P '' -f "$RUNNER_TEMP/oracle-ssh/key" > /dev/null 2>&1; then
+            echo 'ORACLE_SSH_KEY could not be loaded. Re-copy the complete private key with original line breaks; use the dedicated key generated without a passphrase. Keep ORACLE_SSH_HOST_KEY as a separate public host-key line.' >&2
+            exit 1
+          fi
       - name: Upload and deploy on the ARM server
         shell: bash
         run: |

@@ -16,6 +16,13 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+if (process.env.LOCAL_DEVELOPMENT === '1' && process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    res.set('X-Study-Environment', 'local-development');
+    next();
+  });
+}
+
 if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
 }
