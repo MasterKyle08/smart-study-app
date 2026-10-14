@@ -6,8 +6,8 @@ const gcpMonitoring = require('../services/gcpMonitoring');
 
 const router = express.Router();
 
-async function publicQuota() {
-  const totals = await usage.totalsForDay(usage.usageDate());
+async function publicQuota(existing) {
+  const totals = existing || await usage.totalsForDay(usage.usageDate());
   let google = { configured: false, used: null };
   try {
     google = await gcpMonitoring.getCachedDailyGenerativeLanguageRequests();
@@ -31,7 +31,7 @@ router.get('/status', async (req, res) => {
     const user = await userFromRequest(req);
     const premium = authService.resolvePlan(user) === 'premium';
     const status = await usage.snapshot({ user, ip: req.ip, premium });
-    const quota = await publicQuota();
+    const quota = await publicQuota({gemmaRequests:status.community.gemmaUsed});
     status.quota = quota;
     if (status.community) {
       status.community.displayUsed = quota.used;

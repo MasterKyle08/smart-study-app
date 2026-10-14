@@ -41,7 +41,7 @@ router.post('/process', async (req, res) => {
     } = req.body;
 
     let sourceText = extractedText || '';
-    const compact = sourceText.replace(/\s+/g, ' ').trim();
+    const compact = sourceText.replace(/\[Source:[^\]\n]*\]/g,'').replace(/\s+/g, ' ').trim();
     const visionNeeded = Array.isArray(visionImages) && visionImages.length > 0 && compact.length < 250;
     if (visionNeeded) {
       try {
@@ -246,12 +246,16 @@ router.put('/sessions/:id/regenerate', authenticateToken, async (req, res) => {
         updates.quiz = JSON.stringify(materials.quiz);
         updates.quizOptions = currentQuizOptions;
       }
+      const changed=new Set([...(materials.summary!==undefined?['summary']:[]),...(materials.flashcards!==undefined?['flashcard']:[]),...(materials.quiz!==undefined?['question']:[])]);
+      let prior=[];try{prior=JSON.parse(existingSession.citations||'[]');}catch{}
+      updates.citations=[...prior.filter(item=>!changed.has(item.kind)),...(materials.citations||[])];
       const updated = await Session.updateAiContent(sessionId, updates);
       return {
         ...updated,
         flashcards: updated.flashcards ? JSON.parse(updated.flashcards) : null,
         quiz: updated.quiz ? JSON.parse(updated.quiz) : null,
         warnings: materials.warnings,
+        citations:updates.citations,
         summary_keywords: summaryKeywordsArray, quiz_options: currentQuizOptions,
       };
     });
@@ -307,6 +311,7 @@ router.get('/sessions/:id', authenticateToken, async (req, res) => {
         flashcards: session.flashcards ? JSON.parse(session.flashcards) : null,
         quiz: session.quiz ? JSON.parse(session.quiz) : null,
         quiz_options: session.quiz_options ? JSON.parse(session.quiz_options) : null,
+        citations: session.citations ? JSON.parse(session.citations) : [],
         // summary_keywords can be re-derived or stored if needed for dashboard modal later
         // quiz_options: session.quiz_options ? JSON.parse(session.quiz_options) : null,
     };
@@ -369,7 +374,7 @@ router.post('/flashcard-review', authenticateToken, async (req, res) => {
       assertOwnsRecord(session.user_id, req.user.id);
     }
     if (!Number.isFinite(Number(quality)) || Number(quality) < 0 || Number(quality) > 5) return res.status(400).json({ message: 'Quality must be a number from 0 to 5.' });
-    const saved = await FlashcardReview.review({ userId: req.user.id, sessionId: sessionId || null, cardKey: card.term, quality: Number(quality) });
+    const saved = await FlashcardReview.review({ userId: req.user.id, sessionId: sessionId || null, cardKey: card.term, quality: Number(quality), definition:card.definition||'' });
     res.status(200).json({ review: saved });
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to save review.' });
@@ -382,8 +387,9 @@ router.get('/flashcard-reviews', authenticateToken, async (req, res) => {
     const reviews = await FlashcardReview.listDue(req.user.id, {
       sessionId: Number.isNaN(sessionId) ? null : sessionId,
       includeUpcoming: req.query.all === '1',
+      limit:req.query.limit,offset:req.query.offset,
     });
-    res.status(200).json({ reviews });
+    res.status(200).json({ reviews, nextOffset:reviews.length===Math.min(50,Number(req.query.limit)||24)?(Number(req.query.offset)||0)+reviews.length:null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to load reviews.' });
   }

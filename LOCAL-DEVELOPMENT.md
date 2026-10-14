@@ -4,7 +4,7 @@ The user wants changes left for review. Commits and pushes happen only when requ
 
 Manual local development uses **real free Gemma 4** and the **existing Turso database**, as requested. Use a dummy/free account. This is not fake AI: successful calls consume the same project's free quota, and dummy-user sessions/usage are written to the shared database. The local hostname and signing key are separate from production. Local startup does not migrate tables, seed admin roles, or delete expired records. Local email, payments, paid AI, ads, and cloud monitoring are disabled.
 
-Google enforces input tokens per minute as well as requests per minute/day. Free uploads with multiple selected outputs now send the source once in a combined request. The app paces input tokens and respects quota cooldowns, but its limiter is per process: local testing can still compete with live traffic. For independent free quota, use a key from a separate Google project in `.env.local`. A second key in the same project shares its quota. See `deploy/oracle/AI-RELIABILITY.md` for limits and settings.
+Google enforces input tokens per minute as well as requests per minute/day. Free uploads with multiple selected outputs now send the source once in a combined request. The app paces input tokens and respects quota cooldowns, and coordinates minute admission with live traffic through shared Turso after the new production schema is deployed. Before deployment it uses private minute admission without migrating Turso; other tools still compete for project quota. For independent free quota, use a key from a separate Google project in `.env.local`. A second key in the same project shares its quota. See `deploy/oracle/AI-RELIABILITY.md` for limits and settings.
 
 ## Run locally
 
@@ -44,3 +44,5 @@ Automated tests use an in-memory database and browser fixtures/mocked API respon
 Screenshots/reports are written under `.local/artifacts`, `test-results`, and `playwright-report`, all ignored by Git. The browser test server listens on loopback port 4180 and uses its own in-memory records. Manual local development is on port 4173.
 
 Review the changes and test results before authorizing a commit/push. See `AGENTS.md` for the release steps future agents must follow.
+
+Local login/admin sessions use ignored `.local/development-state.sqlite`. Dummy-user study data stays in shared Turso. Recovery/password changes/account deletion are disabled locally to protect shared identities. Folder organization needs the next authorized production schema upgrade; upload generation and regeneration work against the prior schema. Restart local development after deployment to join shared minute admission.

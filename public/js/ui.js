@@ -4,28 +4,28 @@ console.log("Smart Study UI Script Loaded - Version: AI_FEEDBACK_MERGED_2.3-stat
 // --- Global Variables ---
 // Flashcard related
 let currentFlashcardIndex = 0;
-let allFlashcardsData = []; 
-let flashcardContext = 'main'; 
-let markedForReview = []; 
+let allFlashcardsData = [];
+let flashcardContext = 'main';
+let markedForReview = [];
 let flashcardStates = {}; // Stores state like {isFlipped, userAnswer, aiFeedback, correctness, chatHistory: []}
 
 // Quiz related
-window.currentQuizData = null; 
+window.currentQuizData = null;
 window.currentQuizQuestionIndex = 0;
-window.userQuizAnswers = []; 
-window.quizQuestionStates = []; 
-window.currentQuizOptions = { 
+window.userQuizAnswers = [];
+window.quizQuestionStates = [];
+window.currentQuizOptions = {
     questionTypes: ['multiple_choice'],
     numQuestions: 'ai_choice',
     difficulty: 'medium'
 };
-window.currentQuizTextContext = ""; 
-window.originalFullQuizData = null; 
+window.currentQuizTextContext = "";
+window.originalFullQuizData = null;
 window.currentQuizSessionType = 'standard';
 
 // General application state
-window.lastProcessedResults = null; 
-window.currentKeywordsForHighlighting = []; 
+window.lastProcessedResults = null;
+window.currentKeywordsForHighlighting = [];
 
 // --- UI Helper Functions ---
 function toggleElementVisibility(elementId, forceShow) {
@@ -48,7 +48,7 @@ function showMessage(elementId, message, type = 'success', duration = 0) {
     if (!element) {
         return;
     }
-    element.className = 'p-3 rounded-md shadow-sm text-sm font-medium block my-2 transition-opacity duration-300 ease-in-out'; 
+    element.className = 'p-3 rounded-md shadow-sm text-sm font-medium block my-2 transition-opacity duration-300 ease-in-out';
     const typeClasses = {
         success: ['bg-green-100', 'border', 'border-green-300', 'text-green-700'],
         error: ['bg-red-100', 'border', 'border-red-300', 'text-red-700'],
@@ -56,14 +56,14 @@ function showMessage(elementId, message, type = 'success', duration = 0) {
     };
     element.classList.add(...(typeClasses[type] || typeClasses.success));
     element.textContent = message;
-    element.classList.remove('hidden', 'opacity-0'); 
+    element.classList.remove('hidden', 'opacity-0');
     element.classList.add('opacity-100');
 
     if (duration > 0) {
         setTimeout(() => {
             element.classList.remove('opacity-100');
             element.classList.add('opacity-0');
-            setTimeout(() => clearMessage(elementId), 300); 
+            setTimeout(() => clearMessage(elementId), 300);
         }, duration);
     }
 }
@@ -72,8 +72,8 @@ function clearMessage(elementId) {
     const element = document.getElementById(elementId);
     if (element) {
         element.textContent = '';
-        element.className = ''; 
-        element.classList.add('hidden', 'opacity-0'); 
+        element.className = '';
+        element.classList.add('hidden', 'opacity-0');
     }
 }
 
@@ -116,7 +116,7 @@ function setupTabs(tabLinkContainerSelector) {
             tabLinks.forEach(tl => tl.removeAttribute('data-active'));
             const tabSystemContainer = tabLinkContainer.closest('#resultsSection') || tabLinkContainer.closest('#sessionDetailModal') || tabLinkContainer.parentElement;
             const contentPanes = tabSystemContainer ? tabSystemContainer.querySelectorAll('.tab-content') : [];
-            
+
             contentPanes.forEach(pane => { pane.classList.add('hidden'); pane.removeAttribute('data-active'); });
             link.dataset.active = "true";
             const targetContent = document.getElementById(targetId);
@@ -227,7 +227,8 @@ function setupAppShell() {
 
     document.querySelectorAll('.copy-button').forEach((button) => {
         button.addEventListener('click', async (event) => {
-            const targetId = event.currentTarget.dataset.target;
+            const copyButton = event.currentTarget;
+            const targetId = copyButton.dataset.target;
             const contentElement = document.getElementById(targetId);
             if (!contentElement) return;
             const textToCopy = (contentElement.tagName === 'TEXTAREA' || contentElement.tagName === 'INPUT')
@@ -245,9 +246,9 @@ function setupAppShell() {
                 document.execCommand('copy');
                 document.body.removeChild(textArea);
             }
-            const originalText = event.currentTarget.textContent;
-            event.currentTarget.textContent = 'Copied!';
-            setTimeout(() => { event.currentTarget.textContent = originalText; }, 1500);
+            const originalText = copyButton.textContent;
+            copyButton.textContent = 'Copied!';
+            setTimeout(() => { copyButton.textContent = originalText; }, 1500);
         });
     });
 
@@ -423,7 +424,7 @@ function displayResults(results) {
     const summaryOutput = document.getElementById('summaryOutput');
     const flashcardsOutputRaw = document.getElementById('flashcardsOutputRaw');
     const launchFlashcardModalBtnMain = document.getElementById('launchFlashcardModalBtn-main');
-    const flashcardPlaceholderTextEl = document.getElementById('flashcardPlaceholderText'); 
+    const flashcardPlaceholderTextEl = document.getElementById('flashcardPlaceholderText');
 
     const startQuizBtn = document.getElementById('startQuizBtn');
     const quizReadyMessage = document.getElementById('quizReadyMessage');
@@ -437,7 +438,7 @@ function displayResults(results) {
     window.lastProcessedResults = results;
     window.currentExtractedTextForQuiz = results.extractedText || "";
     window.currentKeywordsForHighlighting = results.summaryKeywords || [];
-    
+
     window.currentQuizData = null;
     window.originalFullQuizData = null;
     window.currentQuizQuestionIndex = 0;
@@ -453,6 +454,7 @@ function displayResults(results) {
 
     if (summaryOutput && results.summary) {
         renderSummary(summaryOutput, results.summary);
+        window.StudyState?.appendCitations(summaryOutput,results.citations);
         if (summaryTabLink) { summaryTabLink.classList.remove('opacity-50', 'cursor-not-allowed', 'hidden'); summaryTabLink.disabled = false; if (!firstAvailableTabLink) firstAvailableTabLink = summaryTabLink; }
     } else {
         if (summaryOutput) summaryOutput.innerHTML = '<p class="text-slate-500 text-sm p-4">No summary generated.</p>';
@@ -460,14 +462,14 @@ function displayResults(results) {
     }
 
     if (results.flashcards && Array.isArray(results.flashcards) && results.flashcards.length > 0) {
-        allFlashcardsData = results.flashcards; 
+        allFlashcardsData = results.flashcards;
         if (flashcardsOutputRaw) flashcardsOutputRaw.value = JSON.stringify(results.flashcards, null, 2);
         if (flashcardPlaceholderTextEl) {
             flashcardPlaceholderTextEl.textContent = `Total ${results.flashcards.length} flashcards generated. Click "Study Flashcards" to begin.`;
         }
         if (launchFlashcardModalBtnMain) {
             launchFlashcardModalBtnMain.classList.remove('hidden');
-            const newBtn = launchFlashcardModalBtnMain.cloneNode(true); 
+            const newBtn = launchFlashcardModalBtnMain.cloneNode(true);
             launchFlashcardModalBtnMain.parentNode.replaceChild(newBtn, launchFlashcardModalBtnMain);
             newBtn.onclick = () => {
                 const modalContent = document.getElementById('flashcardModalContent-main');
@@ -491,15 +493,15 @@ function displayResults(results) {
     window.currentQuizOptions = results.quizOptions || window.currentQuizOptions;
 
     if (results.quiz && Array.isArray(results.quiz) && results.quiz.length > 0) {
-        window.currentQuizData = results.quiz.map(q => ({ ...q, chatHistory: [], detailedExplanationContent: null, detailedExplanationFetched: false, aiFeedback: null, correctness: null, previousStateBeforeMark: null, isExplanationVisible: false, isChatVisible: false })); 
+        window.currentQuizData = results.quiz.map(q => ({ ...q, chatHistory: [], detailedExplanationContent: null, detailedExplanationFetched: false, aiFeedback: null, correctness: null, previousStateBeforeMark: null, isExplanationVisible: false, isChatVisible: false }));
         window.originalFullQuizData = JSON.parse(JSON.stringify(window.currentQuizData));
-        window.userQuizAnswers = new Array(window.currentQuizData.length).fill(null); 
-        window.quizQuestionStates = new Array(window.currentQuizData.length).fill('unanswered'); 
+        window.userQuizAnswers = new Array(window.currentQuizData.length).fill(null);
+        window.quizQuestionStates = new Array(window.currentQuizData.length).fill('unanswered');
         if (quizTabLink) { quizTabLink.classList.remove('opacity-50', 'cursor-not-allowed', 'hidden'); quizTabLink.disabled = false; if (!firstAvailableTabLink) firstAvailableTabLink = quizTabLink; }
     } else {
         if (quizTabLink) { quizTabLink.classList.add('opacity-50', 'cursor-not-allowed', 'hidden'); quizTabLink.disabled = true; }
     }
-    initializeQuizSystem(); 
+    initializeQuizSystem();
 
     const resultsNotice = document.getElementById('resultsNotice');
     if (resultsNotice) {
@@ -533,14 +535,14 @@ function renderInteractiveFlashcards(modalContentContainer, flashcards, keywords
     flashcardContext = currentContext;
     markedForReview = allFlashcardsData.map(() => false);
     flashcardStates = {};
-    allFlashcardsData.forEach((_, idx) => { 
-        flashcardStates[idx] = { 
-            isFlipped: false, 
-            userAnswer: '', 
-            aiFeedback: '', 
-            correctness: null, 
-            chatHistory: [] 
-        }; 
+    allFlashcardsData.forEach((_, idx) => {
+        flashcardStates[idx] = {
+            isFlipped: false,
+            userAnswer: '',
+            aiFeedback: '',
+            correctness: null,
+            chatHistory: []
+        };
     });
 
     if (!allFlashcardsData || allFlashcardsData.length === 0) {
@@ -556,7 +558,7 @@ function renderInteractiveFlashcards(modalContentContainer, flashcards, keywords
             <button id="resetFlashcardsBtn-${flashcardContext}" class="flashcard-modal-utility-btn text-xs">Reset Deck</button>
         </div>
         <div id="flashcardProgressBar-${flashcardContext}" class="w-full flex justify-center space-x-1 mb-3 px-1 flex-wrap"></div>
-        <div id="flashcardScene-${flashcardContext}" class="flashcard-modal-scene w-full flex-grow">
+        <div id="flashcardScene-${flashcardContext}" class="flashcard-modal-scene w-full grow">
             <div id="flashcardInner-${flashcardContext}" class="flashcard-modal-inner"></div>
         </div>
         <div class="flex items-center justify-between w-full mt-3 mb-3 px-1">
@@ -568,7 +570,7 @@ function renderInteractiveFlashcards(modalContentContainer, flashcards, keywords
             <h4 class="text-sm font-semibold text-slate-700 mb-1.5">AI Helper</h4>
             <div id="flashcardAiChatMessages-${flashcardContext}" class="h-28 overflow-y-auto border border-slate-200 rounded-md p-2 mb-1.5 text-xs space-y-1 bg-white"></div>
             <div class="flex space-x-2">
-                <input type="text" id="flashcardAiChatInput-${flashcardContext}" class="form-input flex-grow text-xs !py-1.5" placeholder="Ask about this card...">
+                <input type="text" id="flashcardAiChatInput-${flashcardContext}" class="form-input grow text-xs !py-1.5" placeholder="Ask about this card...">
                 <button id="flashcardAiChatSendBtn-${flashcardContext}" class="px-2.5 py-1 bg-sky-500 hover:bg-sky-600 text-white text-xs font-medium rounded-md shadow-sm">Send</button>
             </div>
             <p id="flashcardAiChatStatus-${flashcardContext}" class="text-xs text-slate-500 mt-1"></p>
@@ -611,20 +613,20 @@ function displayFlashcard(index) {
 
     if (!cardInner || !allFlashcardsData[index]) return;
     const cardData = allFlashcardsData[index];
-    const cardState = flashcardStates[index]; 
+    const cardState = flashcardStates[index];
 
     cardInner.innerHTML = '';
-    
+
     if (aiChatContainer) {
         const shouldShowChat = cardState.isFlipped && cardState.chatHistory && cardState.chatHistory.length > 0;
         aiChatContainer.classList.toggle('hidden', !shouldShowChat);
         if (shouldShowChat && aiChatMessages) {
             renderFlashcardChatHistory(aiChatMessages, cardState.chatHistory);
         } else if (aiChatMessages) {
-            aiChatMessages.innerHTML = ''; 
+            aiChatMessages.innerHTML = '';
         }
     }
-    
+
     const frontFace = document.createElement('div');
     frontFace.className = 'flashcard-modal-face flashcard-modal-front';
     frontFace.innerHTML = `
@@ -637,7 +639,7 @@ function displayFlashcard(index) {
     backFace.className = 'flashcard-modal-face flashcard-modal-back';
     backFace.innerHTML = `
         <div class="p-4 sm:p-6 flex flex-col h-full">
-            <div class="flex-grow space-y-2 overflow-y-auto mb-3 pr-1 text-sm">
+            <div class="grow space-y-2 overflow-y-auto mb-3 pr-1 text-sm">
                 <div id="flashcardUserFeedback-${flashcardContext}" class="p-2 rounded-md text-xs">${cardState.aiFeedback ? processTextForDisplay(cardState.aiFeedback) : ''}</div>
                 <div><strong class="block font-semibold text-indigo-700 mb-1">Correct Answer:</strong><p class="text-slate-700">${processTextForDisplay(cardData.definition)}</p></div>
             </div>
@@ -646,12 +648,13 @@ function displayFlashcard(index) {
                 <button id="flipToFrontBtn-${flashcardContext}" class="flashcard-modal-action-btn bg-slate-500 hover:bg-slate-600 focus:ring-slate-400 text-xs">Flip to Front</button>
             </div>
             <div class="srs-row">
-                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(0)">Again</button>
-                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(3)">Hard</button>
-                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(4)">Good</button>
-                <button type="button" class="btn-primary !min-h-0 py-1.5 text-xs" onclick="window.rateFlashcardSrs(5)">Easy</button>
+                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" data-action="rateFlashcardSrs" data-argument="0">Again</button>
+                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" data-action="rateFlashcardSrs" data-argument="3">Hard</button>
+                <button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs" data-action="rateFlashcardSrs" data-argument="4">Good</button>
+                <button type="button" class="btn-primary !min-h-0 py-1.5 text-xs" data-action="rateFlashcardSrs" data-argument="5">Easy</button>
             </div>
         </div>`;
+    if(cardData.citation)window.StudyState?.appendCitations(backFace,[cardData.citation]);
     cardInner.appendChild(frontFace); cardInner.appendChild(backFace);
 
     cardInner.classList.toggle('[transform:rotateY(180deg)]', cardState.isFlipped);
@@ -677,6 +680,8 @@ function displayFlashcard(index) {
 }
 
 function setupCardActionListeners() {
+    const cardState = flashcardStates[currentFlashcardIndex];
+    const selectedCard = allFlashcardsData[currentFlashcardIndex];
     const cardInner = document.getElementById(`flashcardInner-${flashcardContext}`);
     const submitBtn = document.getElementById(`submitFlashcardAnswerBtn-${flashcardContext}`);
     const explainBtn = document.getElementById(`explainFlashcardBtn-${flashcardContext}`);
@@ -689,37 +694,39 @@ function setupCardActionListeners() {
     if (userAnswerTextarea) userAnswerTextarea.onkeydown = (e) => { if (e.key === ' ') e.stopPropagation(); };
 
     if (submitBtn && cardInner && userAnswerTextarea && userFeedbackDiv) {
+        if(selectedCard.isDueReview)submitBtn.textContent='Show answer';
         submitBtn.onclick = async () => {
+            if(selectedCard.isDueReview){cardState.isFlipped=true;displayFlashcard(currentFlashcardIndex);return;}
             const userAnswer = userAnswerTextarea.value;
-            flashcardStates[currentFlashcardIndex].userAnswer = userAnswer;
+            cardState.userAnswer = userAnswer;
             userFeedbackDiv.innerHTML = `<div class="inline-block animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-slate-500 mr-1.5 align-middle"></div> <span class="text-slate-500 align-middle">Getting feedback...</span>`;
             userFeedbackDiv.className = 'text-xs p-2 rounded-md mb-2 bg-slate-100 border border-slate-200';
             cardInner.classList.add('[transform:rotateY(180deg)]');
-            flashcardStates[currentFlashcardIndex].isFlipped = true;
+            cardState.isFlipped = true;
             try {
-                const result = await apiFlashcardInteract(allFlashcardsData[currentFlashcardIndex], "submit_answer", userAnswer, null, flashcardStates[currentFlashcardIndex].chatHistory);
-                flashcardStates[currentFlashcardIndex].aiFeedback = result.feedback;
-                flashcardStates[currentFlashcardIndex].correctness = result.correctness; 
+                const result = await apiFlashcardInteract(selectedCard, "submit_answer", userAnswer, null, cardState.chatHistory);
+                cardState.aiFeedback = result.feedback;
+                cardState.correctness = result.correctness;
             } catch (error) {
                 console.error("Error getting flashcard feedback:", error);
-                flashcardStates[currentFlashcardIndex].aiFeedback = `Error: ${error.message || 'Could not get feedback.'}`;
-                flashcardStates[currentFlashcardIndex].correctness = "incorrect"; 
+                cardState.aiFeedback = `Error: ${error.message || 'Could not get feedback.'}`;
+                cardState.correctness = null;
             }
-            displayFlashcard(currentFlashcardIndex); 
+            displayFlashcard(currentFlashcardIndex);
         };
     }
 
     if (explainBtn && aiChatContainer && aiChatStatus) {
         explainBtn.onclick = async () => {
             aiChatContainer.classList.remove('hidden');
-            const cardChatHistory = flashcardStates[currentFlashcardIndex].chatHistory || [];
-            addMessageToChat('AI', 'Getting explanation...', 'system', flashcardContext, cardChatHistory); 
+            const cardChatHistory = cardState.chatHistory || [];
+            addMessageToChat('AI', 'Getting explanation...', 'system', flashcardContext, cardChatHistory);
             aiChatStatus.textContent = 'Getting explanation...';
             try {
-                const result = await apiFlashcardInteract(allFlashcardsData[currentFlashcardIndex], "request_explanation", null, null, cardChatHistory); 
+                const result = await apiFlashcardInteract(selectedCard, "request_explanation", null, null, cardChatHistory);
                 addMessageToChat('AI', result.explanation, 'ai', flashcardContext, cardChatHistory);
                 // Add explanation to the card's chat history
-                flashcardStates[currentFlashcardIndex].chatHistory.push({role: "model", parts: [{text: result.explanation}]});
+                cardState.chatHistory.push({role: "model", parts: [{text: result.explanation}]});
                 aiChatStatus.textContent = '';
                 document.getElementById(`flashcardAiChatInput-${flashcardContext}`)?.focus();
             } catch (error) {
@@ -733,8 +740,8 @@ function setupCardActionListeners() {
     if (flipToFrontBtn && cardInner) {
         flipToFrontBtn.onclick = () => {
             cardInner.classList.remove('[transform:rotateY(180deg)]');
-            flashcardStates[currentFlashcardIndex].isFlipped = false;
-            if (userAnswerTextarea) userAnswerTextarea.value = flashcardStates[currentFlashcardIndex].userAnswer || '';
+            cardState.isFlipped = false;
+            if (userAnswerTextarea) userAnswerTextarea.value = cardState.userAnswer || '';
             // If chat was visible, hide it, but its history is preserved in flashcardStates[index].chatHistory
             if (aiChatContainer && !aiChatContainer.classList.contains('hidden')) {
                  aiChatContainer.classList.add('hidden');
@@ -756,24 +763,27 @@ function setupFlashcardEventListeners() {
 
     if (prevBtn) prevBtn.onclick = () => { if (currentFlashcardIndex > 0) { currentFlashcardIndex--; displayFlashcard(currentFlashcardIndex); } };
     if (nextBtn) nextBtn.onclick = () => { if (currentFlashcardIndex < allFlashcardsData.length - 1) { currentFlashcardIndex++; displayFlashcard(currentFlashcardIndex); } };
-    
+
     const sendChatMessage = async () => {
         if (!aiChatInput || !aiChatStatus) return;
         const userQuery = aiChatInput.value.trim();
         if (!userQuery) return;
-        
-        let cardChatHistory = flashcardStates[currentFlashcardIndex].chatHistory || [];
-        
-        addMessageToChat('You', userQuery, 'user', flashcardContext, cardChatHistory); 
+
+        const chatState = flashcardStates[currentFlashcardIndex];
+        const selectedCard = allFlashcardsData[currentFlashcardIndex];
+        const priorHistory = window.StudyState.history(chatState.chatHistory);
+        let cardChatHistory = chatState.chatHistory || [];
+
+        addMessageToChat('You', userQuery, 'user', flashcardContext, cardChatHistory);
         cardChatHistory.push({ role: "user", parts: [{ text: userQuery }] });
-        flashcardStates[currentFlashcardIndex].chatHistory = cardChatHistory; 
+        chatState.chatHistory = cardChatHistory;
 
         aiChatInput.value = '';
         aiChatStatus.textContent = 'AI is thinking...';
         try {
-            const result = await apiFlashcardInteract(allFlashcardsData[currentFlashcardIndex], "chat_message", null, userQuery, cardChatHistory); 
+            const result = await apiFlashcardInteract(selectedCard, "chat_message", null, userQuery, priorHistory);
             addMessageToChat('AI', result.chatResponse, 'ai', flashcardContext, result.updatedChatHistory);
-            flashcardStates[currentFlashcardIndex].chatHistory = result.updatedChatHistory; 
+            chatState.chatHistory = result.updatedChatHistory;
             aiChatStatus.textContent = '';
         } catch (error) {
             console.error("Error in flashcard chat:", error);
@@ -782,7 +792,7 @@ function setupFlashcardEventListeners() {
             // Remove the user's last message if AI call failed and it's in the local array
             const lastUserMsgIndex = cardChatHistory.map(m => m.role === 'user' && m.parts[0].text === userQuery).lastIndexOf(true);
             if (lastUserMsgIndex > -1) cardChatHistory.splice(lastUserMsgIndex, 1);
-            flashcardStates[currentFlashcardIndex].chatHistory = cardChatHistory; 
+            chatState.chatHistory = cardChatHistory;
         }
     };
     if (aiChatSendBtn) aiChatSendBtn.onclick = sendChatMessage;
@@ -793,7 +803,7 @@ function setupFlashcardEventListeners() {
             let combined = allFlashcardsData.map((card, i) => ({ card, state: flashcardStates[i], marked: markedForReview[i] }));
             for (let i = combined.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [combined[i], combined[j]] = [combined[j], combined[i]]; }
             allFlashcardsData = combined.map(item => item.card);
-            const newFlashcardStates = {}; 
+            const newFlashcardStates = {};
             combined.forEach((item, i) => { newFlashcardStates[i] = item.state; });
             flashcardStates = newFlashcardStates;
             markedForReview = combined.map(item => item.marked);
@@ -803,12 +813,12 @@ function setupFlashcardEventListeners() {
     if (markReviewBtn) {
         markReviewBtn.onclick = () => {
             markedForReview[currentFlashcardIndex] = !markedForReview[currentFlashcardIndex];
-            displayFlashcard(currentFlashcardIndex); 
+            displayFlashcard(currentFlashcardIndex);
         };
     }
     if (resetBtn) {
         resetBtn.onclick = () => {
-            let originalSource = (flashcardContext === 'main' && window.lastProcessedResults) ? window.lastProcessedResults.flashcards : 
+            let originalSource = (flashcardContext === 'main' && window.lastProcessedResults) ? window.lastProcessedResults.flashcards :
                                   (flashcardContext === 'modal' && window.currentDashboardSessionData) ? window.currentDashboardSessionData.flashcards : allFlashcardsData;
             allFlashcardsData = [...(originalSource || [])];
             markedForReview = allFlashcardsData.map(() => false);
@@ -818,8 +828,8 @@ function setupFlashcardEventListeners() {
     }
 }
 
-function addMessageToChat(sender, message, type, context, chatHistoryArrayRef) { 
-    const messagesDiv = document.getElementById(`flashcardAiChatMessages-${context}`); 
+function addMessageToChat(sender, message, type, context, chatHistoryArrayRef) {
+    const messagesDiv = document.getElementById(`flashcardAiChatMessages-${context}`);
     if (!messagesDiv) return;
     const messageEl = document.createElement('div');
     let senderClass = 'text-slate-700'; let messageBgClass = 'bg-white'; let textAlignClass = 'mr-auto';
@@ -831,9 +841,9 @@ function addMessageToChat(sender, message, type, context, chatHistoryArrayRef) {
     messagesDiv.appendChild(messageEl); messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-function renderFlashcardChatHistory(messagesDiv, chatHistory) { 
+function renderFlashcardChatHistory(messagesDiv, chatHistory) {
     if (!messagesDiv || !chatHistory) return;
-    messagesDiv.innerHTML = ''; 
+    messagesDiv.innerHTML = '';
     chatHistory.forEach(msg => {
         const messageEl = document.createElement('div');
         let senderClass = 'text-slate-700'; let messageBgClass = 'bg-white'; let textAlignClass = 'mr-auto';
@@ -919,7 +929,8 @@ async function handleStartQuiz(forceRegenerate = false) {
             if (!textToUse || textToUse.trim() === "") throw new Error("No text available to generate quiz.");
             window.currentQuizTextContext = textToUse;
 
-            const typeInputs = optionsContainer.querySelectorAll('input[name="regenQuizQuestionTypeOption"]:checked, input[name="quizQuestionTypeOption"]:checked');
+            if (!optionsContainer && window.generateAnotherPractice) return await window.generateAnotherPractice();
+            const typeInputs = optionsContainer?.querySelectorAll('input[name="regenQuizQuestionTypeOption"]:checked, input[name="quizQuestionTypeOption"]:checked') || [];
             const questionTypes = Array.from(typeInputs).map(cb => cb.value);
             const numQuestions = optionsContainer.querySelector('input[name="regenQuizNumQuestionsOption"]:checked, input[name="quizNumQuestionsOption"]:checked')?.value || 'ai_choice';
             const difficulty = optionsContainer.querySelector('input[name="regenQuizDifficultyOption"]:checked, input[name="quizDifficultyOption"]:checked')?.value || 'medium';
@@ -969,7 +980,7 @@ function renderQuizInterface() {
         quizInterfaceContainer.innerHTML = '<p class="text-red-500 p-4">Error: Invalid question data. Please try regenerating the quiz.</p>';
         return;
     }
-    
+
     const questionState = window.quizQuestionStates[window.currentQuizQuestionIndex];
     const isAnswered = questionState !== 'unanswered' && questionState !== 'skipped' && questionState !== 'marked';
     const isMarked = questionState === 'marked';
@@ -991,10 +1002,10 @@ function renderQuizInterface() {
                 ${question.correctness === 'correct' && option === question.correctAnswer ? 'bg-green-100 border-green-400 text-green-700' : ''}
                 ${(question.correctness === 'incorrect' || question.correctness === 'partial') && option === userAnswer && option !== question.correctAnswer ? 'bg-red-100 border-red-400 text-red-700' : ''}
                 ${!isAnswered && !isMarked && option === userAnswer ? 'bg-indigo-100 border-indigo-400' : 'border-slate-300'}">
-                <input type="radio" name="quizOption" value="${escapeHtml(option)}" 
-                    ${option === userAnswer ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''} 
-                    class="form-radio h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3" 
-                    onchange="window.handleQuizAnswerSelection(this.value, 'multiple_choice')">
+                <input type="radio" name="quizOption" value="${escapeHtml(option)}"
+                    ${option === userAnswer ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''}
+                    class="form-radio h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3"
+                    data-answer-type="multiple_choice">
                 <span class="font-medium mr-1.5">${alphabet[idx]}.</span>
                 <span>${processTextForDisplay(option)}</span>
             </label>`).join('');
@@ -1010,10 +1021,10 @@ function renderQuizInterface() {
                 ${isAnswered && Array.isArray(question.correctAnswer) && question.correctAnswer.includes(option) ? 'bg-green-100 border-green-400 text-green-700' : ''}
                 ${isAnswered && Array.isArray(userAnswer) && userAnswer.includes(option) && Array.isArray(question.correctAnswer) && !question.correctAnswer.includes(option) ? 'bg-red-100 border-red-400 text-red-700' : ''}
                 ${!isAnswered && !isMarked && Array.isArray(userAnswer) && userAnswer.includes(option) ? 'bg-indigo-100 border-indigo-400' : 'border-slate-300'}">
-                <input type="checkbox" name="quizOption" value="${escapeHtml(option)}" 
-                    ${Array.isArray(userAnswer) && userAnswer.includes(option) ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''} 
-                    class="form-checkbox h-4 w-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3" 
-                    onchange="window.handleQuizAnswerSelection(this.value, 'select_all_that_apply')">
+                <input type="checkbox" name="quizOption" value="${escapeHtml(option)}"
+                    ${Array.isArray(userAnswer) && userAnswer.includes(option) ? 'checked' : ''} ${isAnswered || isMarked ? 'disabled' : ''}
+                    class="form-checkbox h-4 w-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3"
+                    data-answer-type="select_all_that_apply">
                 <span>${processTextForDisplay(option)}</span>
             </label>`).join('');
         }
@@ -1021,11 +1032,11 @@ function renderQuizInterface() {
         const codeBlock = question.codeSnippet ? `<pre class="code-block mb-3"><code>${escapeHtml(question.codeSnippet)}</code></pre>` : '';
         const lang = question.language ? `<p class="text-xs mb-2" style="color:var(--muted)">${escapeHtml(question.language)}</p>` : '';
         const runner = (question.questionType === 'coding_trace' && String(question.language || '').toLowerCase().includes('javascript'))
-            ? `<button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs mb-2" onclick="window.runQuizCodeSnippet()">Run JavaScript snippet</button><pre id="codeRunnerOutput" class="code-block mb-3 hidden"></pre>`
+            ? `<button type="button" class="btn-secondary !min-h-0 py-1.5 text-xs mb-2" data-action="runQuizCodeSnippet">Run JavaScript snippet</button><pre id="codeRunnerOutput" class="code-block mb-3 hidden"></pre>`
             : '';
-        optionsHtml = `${lang}${codeBlock}${runner}<textarea id="shortAnswerText" class="form-textarea w-full rounded-lg border-slate-300 shadow-sm text-sm p-2" rows="3" placeholder="${question.questionType === 'coding_trace' ? 'What is the output or result?' : 'Type your answer...'}" ${isAnswered || isMarked ? 'disabled' : ''} oninput="window.handleQuizAnswerSelection(this.value, 'short_answer')">${escapeHtml(userAnswer || '')}</textarea>`;
+        optionsHtml = `${lang}${codeBlock}${runner}<textarea id="shortAnswerText" class="form-textarea w-full rounded-lg border-slate-300 shadow-sm text-sm p-2" rows="3" placeholder="${question.questionType === 'coding_trace' ? 'What is the output or result?' : 'Type your answer...'}" ${isAnswered || isMarked ? 'disabled' : ''} data-answer-type="short_answer">${escapeHtml(userAnswer || '')}</textarea>`;
     } else if (question.questionType === 'numeric') {
-        optionsHtml = `<input type="number" step="any" id="numericAnswer" class="form-input w-full rounded-lg text-sm p-2" placeholder="Numeric answer" value="${escapeHtml(userAnswer || '')}" ${isAnswered || isMarked ? 'disabled' : ''} oninput="window.handleQuizAnswerSelection(this.value, 'short_answer')">`;
+        optionsHtml = `<input type="number" step="any" id="numericAnswer" class="form-input w-full rounded-lg text-sm p-2" placeholder="Numeric answer" value="${escapeHtml(userAnswer || '')}" ${isAnswered || isMarked ? 'disabled' : ''} data-answer-type="short_answer">`;
     } else {
         console.error("Unknown question type found:", question.questionType, question);
         optionsHtml = `<p class="text-red-500">Error: Could not display question. Unknown type: ${escapeHtml(question.questionType)}</p>`;
@@ -1039,18 +1050,19 @@ function renderQuizInterface() {
             <div id="quizDetailedExplanation" class="mt-4 p-3 bg-sky-50 border border-sky-200 rounded-md ${question.isExplanationVisible ? '' : 'hidden'}"></div>
             <div id="quizQuestionChatContainer" class="mt-4 space-y-2 ${question.isChatVisible ? '' : 'hidden'}">
                 <div id="quizQuestionChatHistory" class="max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-md bg-slate-50 text-xs"></div>
-                <div class="flex space-x-2"><input type="text" id="quizChatInput" class="form-input flex-grow rounded-lg border-slate-300 shadow-sm text-sm p-2" placeholder="Ask..."><button onclick="window.handleQuizChatSend()" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white text-xs sm:text-sm px-3 py-1.5">Send</button></div>
+                <div class="flex space-x-2"><input type="text" id="quizChatInput" class="form-input grow rounded-lg border-slate-300 shadow-sm text-sm p-2" placeholder="Ask..."><button data-action="handleQuizChatSend" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white text-xs sm:text-sm px-3 py-1.5">Send</button></div>
             </div>
             <div class="mt-6 flex flex-wrap gap-2 justify-between items-center">
-                <div class="flex flex-wrap gap-2"><button onclick="window.handleQuizAnswerSubmission()" class="quiz-nav-button bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm" ${isAnswered || isMarked ? 'disabled' : ''}>Check Answer</button><button onclick="window.toggleDetailedExplanation()" class="quiz-nav-button bg-sky-500 hover:bg-sky-600 text-white text-xs sm:text-sm ${!isAnswered ? 'hidden' : ''}">Explanation</button><button onclick="window.toggleQuizQuestionChat()" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white text-xs sm:text-sm ${!isAnswered ? 'hidden' : ''}">Chat</button></div>
-                <button onclick="window.regenerateCurrentQuizQuestion()" class="quiz-nav-button bg-orange-500 hover:bg-orange-600 text-white text-xs ${!isAnswered ? 'hidden' : ''}">Regenerate Q</button>
+                <div class="flex flex-wrap gap-2"><button data-action="handleQuizAnswerSubmission" class="quiz-nav-button bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm" ${isAnswered || isMarked ? 'disabled' : ''}>Check Answer</button><button data-action="toggleDetailedExplanation" class="quiz-nav-button bg-sky-500 hover:bg-sky-600 text-white text-xs sm:text-sm ${!isAnswered ? 'hidden' : ''}">Explanation</button><button data-action="toggleQuizQuestionChat" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white text-xs sm:text-sm ${!isAnswered ? 'hidden' : ''}">Chat</button></div>
+                <button data-action="regenerateCurrentQuizQuestion" class="quiz-nav-button bg-orange-500 hover:bg-orange-600 text-white text-xs ${!isAnswered ? 'hidden' : ''}">Regenerate Q</button>
             </div>
         </div>
-        <div class="flex justify-center items-center mt-6 space-x-1 quiz-progress-dots flex-wrap">${window.currentQuizData.map((_, idx) => `<button class="w-2.5 h-2.5 rounded-full focus:outline-none m-0.5 ${idx === window.currentQuizQuestionIndex ? 'bg-indigo-600 ring-2 ring-indigo-300' : window.quizQuestionStates[idx] === 'correct' ? 'bg-green-500' : window.quizQuestionStates[idx] === 'incorrect' ? 'bg-red-500' : window.quizQuestionStates[idx] === 'partial' ? 'bg-yellow-500' :  window.quizQuestionStates[idx] === 'marked' ? 'bg-purple-500' : window.quizQuestionStates[idx] === 'skipped' ? 'bg-slate-400' : 'bg-slate-300 hover:bg-slate-400'}" onclick="window.jumpToQuizQuestion(${idx})"></button>`).join('')}</div>
-        <div class="mt-8 flex flex-col sm:flex-row justify-between items-center gap-3"><button onclick="window.previousQuizQuestion()" class="quiz-nav-button bg-slate-500 hover:bg-slate-600 text-white w-full sm:w-auto" ${window.currentQuizQuestionIndex === 0 ? 'disabled' : ''}>Previous</button><div class="flex space-x-2 w-full sm:w-auto justify-center"><button onclick="window.markQuestionForReview()" class="quiz-nav-button bg-purple-500 hover:bg-purple-600 text-white text-xs sm:text-sm flex-grow sm:flex-grow-0">${isMarked ? 'Unmark' : 'Mark'}</button>${!isAnswered && !isMarked ? `<button onclick="window.skipQuestion()" class="quiz-nav-button bg-gray-400 hover:bg-gray-500 text-white text-xs sm:text-sm flex-grow sm:flex-grow-0">Skip</button>` : ''}</div>${window.currentQuizQuestionIndex === window.currentQuizData.length - 1 ? `<button onclick="window.finishQuiz()" class="quiz-nav-button bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">Finish</button>` : `<button onclick="window.nextQuizQuestion()" class="quiz-nav-button bg-slate-500 hover:bg-slate-600 text-white w-full sm:w-auto">Next</button>`}</div>`;
+        <div class="flex justify-center items-center mt-6 space-x-1 quiz-progress-dots flex-wrap">${window.currentQuizData.map((_, idx) => `<button class="w-2.5 h-2.5 rounded-full focus:outline-hidden m-0.5 ${idx === window.currentQuizQuestionIndex ? 'bg-indigo-600 ring-2 ring-indigo-300' : window.quizQuestionStates[idx] === 'correct' ? 'bg-green-500' : window.quizQuestionStates[idx] === 'incorrect' ? 'bg-red-500' : window.quizQuestionStates[idx] === 'partial' ? 'bg-yellow-500' :  window.quizQuestionStates[idx] === 'marked' ? 'bg-purple-500' : window.quizQuestionStates[idx] === 'skipped' ? 'bg-slate-400' : 'bg-slate-300 hover:bg-slate-400'}" data-action="jumpToQuizQuestion" data-argument="${idx}"></button>`).join('')}</div>
+        <div class="mt-8 flex flex-col sm:flex-row justify-between items-center gap-3"><button data-action="previousQuizQuestion" class="quiz-nav-button bg-slate-500 hover:bg-slate-600 text-white w-full sm:w-auto" ${window.currentQuizQuestionIndex === 0 ? 'disabled' : ''}>Previous</button><div class="flex space-x-2 w-full sm:w-auto justify-center"><button data-action="markQuestionForReview" class="quiz-nav-button bg-purple-500 hover:bg-purple-600 text-white text-xs sm:text-sm grow sm:grow-0">${isMarked ? 'Unmark' : 'Mark'}</button>${!isAnswered && !isMarked ? `<button data-action="skipQuestion" class="quiz-nav-button bg-gray-400 hover:bg-gray-500 text-white text-xs sm:text-sm grow sm:grow-0">Skip</button>` : ''}</div>${window.currentQuizQuestionIndex === window.currentQuizData.length - 1 ? `<button data-action="finishQuiz" class="quiz-nav-button bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">Finish</button>` : `<button data-action="nextQuizQuestion" class="quiz-nav-button bg-slate-500 hover:bg-slate-600 text-white w-full sm:w-auto">Next</button>`}</div>`;
 
     if(isAnswered && question.aiFeedback) displayQuizAnswerFeedbackUI(userAnswer, question);
-    
+    if(question.citation)window.StudyState?.appendCitations(quizInterfaceContainer.querySelector('.quiz-question-display'),[question.citation]);
+
     const explanationDiv = document.getElementById('quizDetailedExplanation');
     if (explanationDiv && question.isExplanationVisible) { // Check visibility state
         if (question.detailedExplanationFetched && question.detailedExplanationContent) {
@@ -1059,7 +1071,7 @@ function renderQuizInterface() {
              explanationDiv.innerHTML = `<p class="text-slate-500">No detailed explanation available.</p>`;
         } // If not fetched yet, toggleDetailedExplanation will handle it.
     }
-    
+
     const chatContainer = document.getElementById('quizQuestionChatContainer');
     if (chatContainer && question.isChatVisible) { // Check visibility state
         renderQuizChatHistory();
@@ -1082,7 +1094,7 @@ window.handleQuizAnswerSelection = function(value, type) {
     } else {
         window.userQuizAnswers[index] = value;
     }
-    if (type !== 'short_answer') renderQuizInterface(); 
+    if (type !== 'short_answer') renderQuizInterface();
 }
 
 window.handleQuizAnswerSubmission = async function() {
@@ -1096,30 +1108,30 @@ window.handleQuizAnswerSubmission = async function() {
 
     showProcessingStatus(feedbackElementId, 'Checking answer...', true);
     try {
-        const response = await apiGetQuizAnswerFeedback(question, userAnswer); 
-        window.quizQuestionStates[index] = response.correctness; 
-        question.aiFeedback = response.feedback; 
-        question.correctness = response.correctness; 
+        const response = await apiGetQuizAnswerFeedback(question, userAnswer);
+        window.quizQuestionStates[index] = response.correctness;
+        question.aiFeedback = response.feedback;
+        question.correctness = response.correctness;
         hideProcessingStatus(feedbackElementId);
-        renderQuizInterface(); 
+        renderQuizInterface();
     } catch (error) {
         console.error("Error submitting quiz answer:", error);
         showMessage(feedbackElementId, `Error: ${error.message || 'Could not submit answer.'}`, 'error', 5000);
-        question.aiFeedback = `Error: ${error.message || 'Could not get feedback.'}`; 
-        question.correctness = 'incorrect'; 
-        window.quizQuestionStates[index] = 'incorrect'; 
+        question.aiFeedback = `Error: ${error.message || 'Could not get feedback.'}`;
+        question.correctness = null;
+        window.quizQuestionStates[index] = 'unanswered';
         hideProcessingStatus(feedbackElementId);
-        renderQuizInterface(); 
+        renderQuizInterface();
     }
 }
 
 function displayQuizAnswerFeedbackUI(userAnswer, question) {
     const feedbackDiv = document.getElementById('quizAnswerFeedback');
     if (!feedbackDiv || !question.aiFeedback) return;
-    
+
     let feedbackHtml = `<p class="font-semibold mb-1">Feedback:</p><p>${processTextForDisplay(question.aiFeedback)}</p>`;
     feedbackDiv.innerHTML = feedbackHtml;
-    
+
     feedbackDiv.className = `mt-4 p-3 rounded-md text-sm ${
         question.correctness === 'correct' ? 'bg-green-50 border-green-200 text-green-700' :
         question.correctness === 'partial' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
@@ -1130,7 +1142,7 @@ function displayQuizAnswerFeedbackUI(userAnswer, question) {
 window.toggleDetailedExplanation = async function() {
     const explanationDiv = document.getElementById('quizDetailedExplanation');
     const question = window.currentQuizData[window.currentQuizQuestionIndex];
-    const feedbackElementId = 'quizAnswerFeedback'; 
+    const feedbackElementId = 'quizAnswerFeedback';
     if (!explanationDiv || !question) return;
 
     question.isExplanationVisible = !explanationDiv.classList.contains('hidden'); // Get current visual state
@@ -1139,17 +1151,17 @@ window.toggleDetailedExplanation = async function() {
     explanationDiv.classList.toggle('hidden', !question.isExplanationVisible);
 
     if (question.isExplanationVisible) {
-        if (!question.detailedExplanationFetched) { 
+        if (!question.detailedExplanationFetched) {
             showProcessingStatus(feedbackElementId, 'Fetching explanation...', true);
             try {
-                const response = await apiGetQuizQuestionDetailedExplanation(question); 
+                const response = await apiGetQuizQuestionDetailedExplanation(question);
                 question.detailedExplanationContent = response.explanation;
-                question.detailedExplanationFetched = true; 
+                question.detailedExplanationFetched = true;
                 hideProcessingStatus(feedbackElementId);
-            } catch (error) { 
-                console.error("Error fetching detailed explanation:", error); 
-                showMessage(feedbackElementId, `Error: ${error.message}`, 'error', 3000); 
-                hideProcessingStatus(feedbackElementId); 
+            } catch (error) {
+                console.error("Error fetching detailed explanation:", error);
+                showMessage(feedbackElementId, `Error: ${error.message}`, 'error', 3000);
+                hideProcessingStatus(feedbackElementId);
                 question.detailedExplanationContent = "Could not load explanation."; // Show error in place
             }
         }
@@ -1161,15 +1173,15 @@ window.toggleQuizQuestionChat = function() {
     const chatContainer = document.getElementById('quizQuestionChatContainer');
     const question = window.currentQuizData[window.currentQuizQuestionIndex];
     if (!chatContainer || !question) return;
-    
+
     question.isChatVisible = !chatContainer.classList.contains('hidden'); // Get current visual state
     question.isChatVisible = !question.isChatVisible; // Toggle desired state
-    
+
     chatContainer.classList.toggle('hidden', !question.isChatVisible);
 
-    if (question.isChatVisible) { 
-        renderQuizChatHistory(); 
-        document.getElementById('quizChatInput')?.focus(); 
+    if (question.isChatVisible) {
+        renderQuizChatHistory();
+        document.getElementById('quizChatInput')?.focus();
     }
 }
 
@@ -1194,8 +1206,8 @@ window.handleQuizChatSend = async function() {
     renderQuizChatHistory();
     chatInput.value = ''; chatInput.disabled = true;
     try {
-        const response = await apiChatAboutQuizQuestion(question, question.chatHistory.slice(0, -1), userQuery); 
-        question.chatHistory.push({ role: "model", parts: [{ text: response.chatResponse }] }); 
+        const response = await apiChatAboutQuizQuestion(question, question.chatHistory.slice(0, -1), userQuery);
+        question.chatHistory.push({ role: "model", parts: [{ text: response.chatResponse }] });
         renderQuizChatHistory();
     } catch (error) { console.error("Error in quiz chat:", error); showMessage(feedbackElementId, `Chat error: ${error.message}`, 'error', 3000); question.chatHistory.pop(); renderQuizChatHistory(); }
     finally { chatInput.disabled = false; chatInput.focus(); }
@@ -1204,14 +1216,14 @@ window.handleQuizChatSend = async function() {
 window.regenerateCurrentQuizQuestion = async function() {
     const index = window.currentQuizQuestionIndex;
     const originalQuestion = window.currentQuizData[index];
-    const statusElementId = 'quizAnswerFeedback'; 
+    const statusElementId = 'quizAnswerFeedback';
     showProcessingStatus(statusElementId, 'Regenerating question...', true);
     try {
-        const newQuestionData = await apiRegenerateQuizQuestion(originalQuestion, window.currentQuizTextContext, originalQuestion.difficulty || window.currentQuizOptions.difficulty); 
+        const newQuestionData = await apiRegenerateQuizQuestion(originalQuestion, window.currentQuizTextContext, originalQuestion.difficulty || window.currentQuizOptions.difficulty);
         window.currentQuizData[index] = { ...newQuestionData.question, id: originalQuestion.id, chatHistory: [], detailedExplanationContent: null, detailedExplanationFetched: false, aiFeedback: null, correctness: null, previousStateBeforeMark: null, isExplanationVisible: false, isChatVisible: false };
         window.userQuizAnswers[index] = null; window.quizQuestionStates[index] = 'unanswered';
-        
-        document.getElementById('quizDetailedExplanation')?.classList.add('hidden'); 
+
+        document.getElementById('quizDetailedExplanation')?.classList.add('hidden');
         document.getElementById('quizQuestionChatContainer')?.classList.add('hidden');
         renderQuizInterface();
         showMessage(statusElementId, 'Question regenerated.', 'success', 3000);
@@ -1234,7 +1246,7 @@ window.skipQuestion = function() {
     if (window.currentQuizQuestionIndex < window.currentQuizData.length - 1) nextQuizQuestion(); else finishQuiz();
 }
 
-window.finishQuiz = function() { 
+window.finishQuiz = function() {
     const quizResultsContainer = document.getElementById('quizResultsContainer');
     if (!quizResultsContainer) return;
     document.getElementById('quizInterfaceContainer')?.classList.add('hidden');
@@ -1286,7 +1298,7 @@ window.finishQuiz = function() {
 
     const personalizationHtml = `
         <div class="flex flex-col gap-5 mt-6">
-            <button onclick="window.retryAllQuestions()" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry Quiz</button>
+            <button data-action="retryAllQuestions" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry Quiz</button>
             <div class="border border-slate-200 bg-slate-50 rounded-lg p-4 text-left">
                 <h4 class="text-lg font-semibold text-slate-800 mb-2">Make it your own</h4>
                 <p class="text-sm text-slate-600 mb-4">Generate a personalized version with AI and tweak the size or difficulty. Perfect for creating a custom session you can save to your dashboard.</p>
@@ -1317,17 +1329,17 @@ window.finishQuiz = function() {
                 </div>
                 <div id="premadePersonalizeStatus" class="text-sm mt-3"></div>
                 <div class="mt-4 flex flex-col sm:flex-row gap-3">
-                    <button id="premadePersonalizeGenerateBtn" onclick="window.generatePersonalizedQuizFromPremade()" class="quiz-nav-button bg-teal-600 hover:bg-teal-700 text-white w-full sm:w-auto">Generate Personalized Quiz</button>
+                    <button id="premadePersonalizeGenerateBtn" data-action="generatePersonalizedQuizFromPremade" class="quiz-nav-button bg-teal-600 hover:bg-teal-700 text-white w-full sm:w-auto">Generate Personalized Quiz</button>
                 </div>
             </div>
         </div>`;
 
     const standardActionsHtml = `
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
-            <button onclick="window.retryIncorrectQuestions()" class="quiz-nav-button bg-orange-500 hover:bg-orange-600 text-white w-full">Retry Incorrect/Partial</button>
-            <button onclick="window.retryAllQuestions()" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry All</button>
-            <button onclick="window.startNewQuizSameSettings()" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white w-full">New Quiz (Same Settings)</button>
-            <button onclick="window.changeQuizSettingsAndStartNew()" class="quiz-nav-button bg-indigo-500 hover:bg-indigo-600 text-white w-full">Change Settings & New Quiz</button>
+            <button data-action="retryIncorrectQuestions" class="quiz-nav-button bg-orange-500 hover:bg-orange-600 text-white w-full">Retry Incorrect/Partial</button>
+            <button data-action="retryAllQuestions" class="quiz-nav-button bg-blue-500 hover:bg-blue-600 text-white w-full">Retry All</button>
+            <button data-action="startNewQuizSameSettings" class="quiz-nav-button bg-teal-500 hover:bg-teal-600 text-white w-full">New Quiz (Same Settings)</button>
+            <button data-action="changeQuizSettingsAndStartNew" class="quiz-nav-button bg-indigo-500 hover:bg-indigo-600 text-white w-full">Change Settings & New Quiz</button>
         </div>`;
 
     quizResultsContainer.innerHTML = `
@@ -1343,7 +1355,7 @@ window.finishQuiz = function() {
     updateQuizStartButtonState();
 }
 window.retryIncorrectQuestions = function() {
-    const incorrect = window.originalFullQuizData.filter((_, i) => window.quizQuestionStates[i] === 'incorrect' || window.quizQuestionStates[i] === 'partial');
+    const incorrect = window.currentQuizData.filter((_, i) => window.quizQuestionStates[i] === 'incorrect' || window.quizQuestionStates[i] === 'partial');
     if (incorrect.length > 0) {
         window.currentQuizData = JSON.parse(JSON.stringify(incorrect)).map(q => ({...q, chatHistory:[], detailedExplanationContent:null, detailedExplanationFetched:false, aiFeedback:null, correctness:null, previousStateBeforeMark:null, isExplanationVisible: false, isChatVisible: false}));
         window.currentQuizQuestionIndex = 0; window.userQuizAnswers = new Array(window.currentQuizData.length).fill(null); window.quizQuestionStates = new Array(window.currentQuizData.length).fill('unanswered');
@@ -1363,6 +1375,7 @@ window.startNewQuizSameSettings = async function() {
     await handleStartQuiz(true);
 }
 window.changeQuizSettingsAndStartNew = function() {
+    if (window.changePracticeSettings) { window.changePracticeSettings(); return; }
     document.getElementById('quizResultsContainer')?.classList.add('hidden');
     document.getElementById('quizInterfaceContainer')?.classList.add('hidden');
     const quizSetupView = document.getElementById('quizSetupView');
@@ -1371,8 +1384,8 @@ window.changeQuizSettingsAndStartNew = function() {
         const customizeDetails = quizSetupView.querySelector('details');
         if(customizeDetails) customizeDetails.open = true;
     }
-    window.currentQuizData = null; window.originalFullQuizData = null; 
-    initializeQuizSystem(); 
+    window.currentQuizData = null; window.originalFullQuizData = null;
+    initializeQuizSystem();
 }
 
 // --- DOMContentLoaded ---
@@ -1414,8 +1427,8 @@ document.addEventListener('DOMContentLoaded', () => {
             mainExplainButton.disabled = true; mainExplainButton.textContent = 'Explaining...';
             mainExplanationOutput.classList.add('hidden'); mainExplanationOutput.innerHTML = '';
             try {
-                showProcessingStatus('processingStatus', 'Getting explanation...', true); 
-                const { explanation } = await apiExplainSnippet(selectedText); 
+                showProcessingStatus('processingStatus', 'Getting explanation...', true);
+                const { explanation } = await apiExplainSnippet(selectedText);
                 mainExplanationOutput.innerHTML = processTextForDisplay(explanation);
                 mainExplanationOutput.classList.remove('hidden');
                 hideProcessingStatus('processingStatus');
@@ -1446,43 +1459,28 @@ window.processTextForDisplay = processTextForDisplay;
 window.displayResults = displayResults;
 window.renderSummary = renderSummary;
 window.renderQuiz = renderQuiz;
-window.renderInteractiveFlashcards = renderInteractiveFlashcards; 
-window.runQuizCodeSnippet = function runQuizCodeSnippet() {
-    const question = window.currentQuizData && window.currentQuizData[window.currentQuizQuestionIndex];
+window.renderInteractiveFlashcards = renderInteractiveFlashcards;
+window.runQuizCodeSnippet = function() {
+    const question = window.currentQuizData?.[window.currentQuizQuestionIndex];
     const out = document.getElementById('codeRunnerOutput');
     if (!question || !out) return;
-    const code = question.codeSnippet || '';
-    out.classList.remove('hidden');
-    out.textContent = 'Running...';
-    const frame = document.createElement('iframe');
-    frame.setAttribute('sandbox', 'allow-scripts');
-    frame.style.display = 'none';
-    const handle = (event) => {
-        if (event.source !== frame.contentWindow) return;
-        window.removeEventListener('message', handle);
-        frame.remove();
-        out.textContent = event.data && event.data.msg ? String(event.data.msg) : 'No output.';
-    };
-    window.addEventListener('message', handle);
-    frame.srcdoc = `<script>
-      (function(){
-        var logs=[];
-        console.log=function(){logs.push(Array.prototype.slice.call(arguments).join(' '));};
-        try {
-          var result=(function(){ ${code.replace(/<\/script/gi, '<\\/script')} })();
-          parent.postMessage({msg: (logs.join('\\n') + (result!==undefined ? (logs.length?'\\n':'') + String(result) : '')) || 'undefined'}, '*');
-        } catch(e) { parent.postMessage({msg: 'Error: ' + e.message}, '*'); }
-      })();
-    </script>`;
-    document.body.appendChild(frame);
-    setTimeout(() => { if (frame.parentNode) { frame.remove(); window.removeEventListener('message', handle); if (out.textContent === 'Running...') out.textContent = 'Timed out.'; } }, 1200);
+    out.classList.remove('hidden'); out.textContent = 'Running...';
+    window.studyCodeWorker?.terminate();
+    const worker = new Worker('/js/code-worker.js'); window.studyCodeWorker = worker;
+    const timer = setTimeout(() => { worker.terminate(); out.textContent = 'Timed out.'; }, 1200);
+    worker.onmessage = event => { clearTimeout(timer); worker.terminate(); out.textContent = event.data.error ? 'Error: ' + event.data.error : event.data.text; };
+    worker.onerror = () => { clearTimeout(timer); worker.terminate(); out.textContent = 'Could not execute this snippet.'; };
+    worker.postMessage(question.codeSnippet || '');
 };
 window.updateNav = updateNav;
 window.setupAppShell = setupAppShell;
 window.rateFlashcardSrs = async function rateFlashcardSrs(quality) {
+    if(window.studyRatingPending)return;
     const card = allFlashcardsData[currentFlashcardIndex];
     if (!card) return;
-    const key = `srs:${window.lastProcessedResults?.sessionId || window.currentDashboardSessionData?.id || 'local'}:${card.term}`;
+    const index=currentFlashcardIndex;
+    const sessionId=Object.hasOwn(card,'sessionId')?card.sessionId:(window.lastProcessedResults?.sessionId ?? window.currentDashboardSessionData?.id ?? null);
+    const key = `study-private:srs:${localStorage.getItem('userEmail')||'visitor'}:${sessionId||'local'}:${card.term}`;
     const prev = JSON.parse(localStorage.getItem(key) || '{}');
     const next = (function review(state, q) {
         let repetitions = Number(state.repetitions) || 0;
@@ -1496,22 +1494,29 @@ window.rateFlashcardSrs = async function rateFlashcardSrs(quality) {
             repetitions += 1;
         }
         easeFactor = Math.max(1.3, easeFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
-        return { repetitions, intervalDays, easeFactor, dueAt: new Date(Date.now() + intervalDays * 86400000).toISOString() };
+        return { repetitions, intervalDays, easeFactor, dueAt: new Date(Date.now() + (q<3?600000:intervalDays * 86400000)).toISOString() };
     })(prev, quality);
-    localStorage.setItem(key, JSON.stringify(next));
     if (localStorage.getItem('userEmail') && typeof apiSaveFlashcardReview === 'function') {
+        window.studyRatingPending=true;
         try {
-            await apiSaveFlashcardReview({
-                sessionId: window.lastProcessedResults?.sessionId || window.currentDashboardSessionData?.id || null,
+            const response=await apiSaveFlashcardReview({
+                sessionId,
                 card,
                 quality,
             });
-        } catch (_err) { /* local schedule still saved */ }
-    }
+            localStorage.setItem(key,JSON.stringify(response.review));
+        } catch (error) { alert('Review was not synchronized: '+error.message); return; }
+        finally{window.studyRatingPending=false;}
+    }else localStorage.setItem(key,JSON.stringify(next));
+    if(index!==currentFlashcardIndex||allFlashcardsData[index]!==card)return;
     if (currentFlashcardIndex < allFlashcardsData.length - 1) {
         currentFlashcardIndex += 1;
         displayFlashcard(currentFlashcardIndex);
+    } else if(window.dueReviewActive) {
+        window.dueReviewActive=false;
+        toggleElementVisibility('flashcardStudyModal-modal',false);
+        window.refreshDueCards?.();
     }
-}; 
+};
 window.initializeQuizSystem = initializeQuizSystem;
 window.escapeHtml = escapeHtml;

@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Practice studio — Smart Study</title>
-    <script>(function(){try{var t=localStorage.getItem('ss-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+    <script src="/js/theme-init.js"></script>
+    <script src="/js/actions.js" defer></script>
     <link rel="stylesheet" href="/css/style.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <link rel="stylesheet" href="/vendor/katex/katex.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -20,6 +21,7 @@
                 <a href="/practice" class="nav-link nav-link-active">Practice</a>
                 <a href="/premade" class="nav-link">Quiz library</a>
                 <button id="dashboardNavButton" class="nav-link nav-auth-user hidden">Dashboard</button>
+                <a href="/account.html" class="nav-link nav-auth-user hidden">Account</a>
                 <a href="/admin" class="nav-link nav-auth-admin hidden">Admin</a>
                 <select id="themeSelect" class="theme-select" aria-label="Color theme">
                     <option value="light">Light</option>
@@ -41,15 +43,16 @@
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
             </select>
-            <button class="nav-link w-full justify-start nav-auth-user hidden" onclick="document.getElementById('dashboardNavButton').click()">Dashboard</button>
+            <button class="nav-link w-full justify-start nav-auth-user hidden" data-click-target="dashboardNavButton">Dashboard</button>
+            <a href="/account.html" class="nav-link w-full justify-start nav-auth-user hidden">Account</a>
             <a href="/admin" class="nav-link w-full justify-start nav-auth-admin hidden">Admin</a>
-            <button class="btn-secondary w-full nav-auth-guest" onclick="document.getElementById('loginNavButton').click()">Sign in</button>
-            <button class="btn-primary w-full nav-auth-guest" onclick="document.getElementById('registerNavButton').click()">Create account</button>
-            <button class="btn-danger w-full nav-auth-user hidden" onclick="document.getElementById('logoutNavButton').click()">Sign out</button>
+            <button class="btn-secondary w-full nav-auth-guest" data-click-target="loginNavButton">Sign in</button>
+            <button class="btn-primary w-full nav-auth-guest" data-click-target="registerNavButton">Create account</button>
+            <button class="btn-danger w-full nav-auth-user hidden" data-click-target="logoutNavButton">Sign out</button>
         </div>
     </header>
 
-    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 flex-grow">
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 grow">
         <section id="usageMeter" class="surface-card mb-6 text-sm"></section>
         <section class="hero-card max-w-3xl">
             <p class="hero-kicker">No upload needed</p>
@@ -141,12 +144,14 @@
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="/vendor/katex/katex.min.js"></script>
     <script src="/js/theme.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/usage-meter.js"></script>
+    <script src="/js/study-state.js"></script>
     <script src="/js/ui.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/js/practice.js"></script>
+<p class="text-center text-sm p-4"><a href="/privacy.html" class="underline">Privacy and data handling</a></p>
 </body>
 </html>

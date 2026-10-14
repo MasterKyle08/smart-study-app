@@ -65,6 +65,7 @@ async function getAccessToken(sa) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
+    signal:AbortSignal.timeout(10000),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data.access_token) {
@@ -118,6 +119,7 @@ async function getDailyGenerativeLanguageRequests() {
   const url = `https://monitoring.googleapis.com/v3/projects/${encodeURIComponent(projectId)}/timeSeries?${params.toString()}`;
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
+    signal:AbortSignal.timeout(10000),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -153,6 +155,7 @@ async function getDailyGenerativeLanguageRequests() {
 
 const CACHE_MS = Math.max(30, parseInt(process.env.GCP_MONITORING_CACHE_SECONDS || '90', 10)) * 1000;
 let quotaCache = { at: 0, value: null };
+let pendingQuota;
 
 function publicQuotaView(googleResult, selfUsed, limit) {
   const cap = Number(limit) || parseInt(process.env.GEMMA_DAILY_BUDGET || '1500', 10);
@@ -186,6 +189,11 @@ async function getCachedDailyGenerativeLanguageRequests() {
   if (quotaCache.value && Date.now() - quotaCache.at < CACHE_MS) {
     return quotaCache.value;
   }
+  if(pendingQuota)return pendingQuota;
+  pendingQuota=refreshQuota();
+  try{return await pendingQuota;}finally{pendingQuota=null;}
+}
+async function refreshQuota() {
   try {
     const value = await getDailyGenerativeLanguageRequests();
     quotaCache = { at: Date.now(), value };

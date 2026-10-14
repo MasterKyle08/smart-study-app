@@ -48,3 +48,7 @@ Report what changed, the checks/results, and practical limitations. Leave the ch
 - The workflow deploys committed source via SSH; the original server installation used a ZIP and needs no Git checkout.
 - Preserve the server `.env`, `.deploy` lock/state, backups, Turso data, and certificate volumes. Do not use `docker compose down -v` or prune volumes.
 - Refer to `deploy/oracle/AUTO-DEPLOY.md` for deployment credentials and troubleshooting, and `deploy/oracle/AI-RELIABILITY.md` for free Gemma behavior.
+
+## Selected audit work
+
+Read `IMPLEMENTATION-PROGRESS.md` when continuing the selected security, bug, performance and feature update. It records item status, validation and activation requirements. Completed implementation does not authorize a commit, push, migration or deployment.

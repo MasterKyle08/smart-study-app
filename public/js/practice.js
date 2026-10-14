@@ -2,6 +2,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof setCurrentYear === 'function') setCurrentYear('currentYearPractice');
   const form = document.getElementById('practiceForm');
   if (!form) return;
+  window.generateAnotherPractice = () => form.requestSubmit();
+  window.changePracticeSettings = () => {
+    document.getElementById('quizResultsContainer')?.classList.add('hidden');
+    document.getElementById('quizInterfaceContainer')?.classList.add('hidden');
+    form.scrollIntoView({ behavior:'smooth' }); document.getElementById('practiceTopic')?.focus();
+  };
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();

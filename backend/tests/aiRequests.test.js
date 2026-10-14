@@ -341,7 +341,7 @@ test('free file processing bundles selected outputs and saves the normalized ses
   assert.equal(result.sessionId, 42);
   assert.equal(saved.flashcards, null);
   assert.equal(JSON.parse(saved.quiz)[0].id, 'q1');
-  assert.equal(result.warnings.length, 1);
+  assert.ok(result.warnings.includes('Flashcards: incomplete'));
 });
 
 test('queued requests cancel promptly without contacting Google or retaining their slot', async () => {
@@ -403,4 +403,28 @@ test('cancellation after admission but before dispatch refunds the reservation w
   await assert.rejects(h.request({}, { ...options, signal: controller.signal }), error => error.statusCode === 499);
   assert.equal(calls, 0);
   assert.deepEqual(refunded, { fixtureReservation: 1 });
+});
+
+test('Gemini 2.5 Premium uses thinkingBudget zero for text and structured output',async()=>{
+ const payloads=[];const ai=loadService('ai.js',{
+  './googleRequest':{createGoogleRequester:()=>async(payload,options)=>{payloads.push(payload);return {modelName:options.modelName,data:{candidates:[{content:{parts:[{text:payload.generationConfig.responseMimeType?'[{"term":"API","definition":"Application programming interface"}]':'Summary'}]},finishReason:'STOP'}]}}}},
+  './usage':{recordRequest:async()=>{}},
+ },{GOOGLE_PREMIUM_MODEL_NAME:'gemini-2.5-flash-lite'});
+ await ai.generateSummary('Study source','short','plain','','','',{premium:true});
+ await ai.generateFlashcards('Study source',{premium:true});
+ assert.equal(payloads.length,2);for(const payload of payloads){assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget,0);assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel,undefined);}
+});
+
+test('malformed grading output fails without assigning an incorrect score',async()=>{
+ const ai=loadService('ai.js',{
+  './googleRequest':{createGoogleRequester:()=>async(_payload,options)=>({modelName:options.modelName,data:{candidates:[{content:{parts:[{text:'{"feedback":"Missing score"}'}]}}]}})},
+  './usage':{recordRequest:async()=>{}},'./aiTelemetry':{record:()=>{}},
+ });
+ await assert.rejects(ai.getFlashcardInteractionResponse({term:'Energy',definition:'Answer'},'submit_answer','Answer'),error=>error.statusCode===502);
+ await assert.rejects(ai.getQuizAnswerFeedback({questionType:'short_answer',questionText:'Explain',correctAnswer:'Answer'},'Answer'),error=>error.statusCode===502);
+});
+
+test('network failures are recorded separately without prompt content',async()=>{
+ const h=harness(async()=>{throw Object.assign(new Error('socket failed'),{name:'FetchError',code:'ECONNRESET'});},{retries:0});
+ await assert.rejects(h.request({contents:[{parts:[{text:'Private prompt'}]}]},options));assert.equal(h.logs[0].outcome,'network-error');assert.ok(!JSON.stringify(h.logs).includes('Private prompt'));
 });

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Account · Smart Study</title>
+    <script src="/js/theme-init.js"></script>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <main class="container mx-auto max-w-3xl px-4 py-8">
+      <a class="nav-link" href="/dashboard">← Dashboard</a>
+      <h1 class="text-2xl font-semibold mt-4 mb-6">Your account</h1>
+      <p id="accountStatus" role="status" class="mb-4"></p>
+      <p id="signedOutNotice" class="hidden mb-4">
+        Sign in on the <a class="underline" href="/">home page</a> to manage
+        your account.
+      </p>
+      <section id="resetSection" class="surface-card hidden mb-6">
+        <h2 class="font-semibold mb-3">Choose a new password</h2>
+        <form id="resetForm" class="space-y-3">
+          <label class="block"
+            >New passphrase<input
+              name="password"
+              type="password"
+              minlength="12"
+              maxlength="72"
+              required
+              autocomplete="new-password"
+              class="form-input w-full" /></label
+          ><button class="btn-primary">Reset password</button>
+        </form>
+      </section>
+      <section class="surface-card mb-6">
+        <h2 class="font-semibold mb-3">Forgot your password?</h2>
+        <form id="recoveryForm" class="space-y-3">
+          <label class="block"
+            >Email<input
+              name="email"
+              type="email"
+              required
+              autocomplete="email"
+              class="form-input w-full" /></label
+          ><button class="btn-secondary">Send recovery link</button>
+        </form>
+      </section>
+      <div id="accountTools" class="hidden space-y-6">
+        <p id="accountEmail"></p>
+        <p id="adminAccountNote" class="hidden">
+          For sensitive account actions,
+          <a href="/admin" class="underline">unlock admin mode</a> first.
+        </p>
+        <section class="surface-card">
+          <h2 class="font-semibold mb-3">Change password</h2>
+          <form id="passwordForm" class="space-y-3">
+            <label class="block"
+              >Current password<input
+                name="currentPassword"
+                type="password"
+                required
+                autocomplete="current-password"
+                class="form-input w-full" /></label
+            ><label class="block"
+              >New passphrase (12+ characters)<input
+                name="password"
+                type="password"
+                required
+                minlength="12"
+                maxlength="72"
+                autocomplete="new-password"
+                class="form-input w-full" /></label
+            ><button class="btn-primary">
+              Change and sign out all devices
+            </button>
+          </form>
+        </section>
+        <section class="surface-card">
+          <h2 class="font-semibold mb-3">Active sessions</h2>
+          <div id="activeSessions"></div>
+        </section>
+        <section class="surface-card flex flex-wrap gap-3">
+          <button id="exportAccount" class="btn-secondary">
+            Download my data</button
+          ><button id="manageSubscription" class="btn-secondary">
+            Manage subscription
+          </button>
+        </section>
+        <section class="surface-card">
+          <h2 class="font-semibold mb-3">Delete account</h2>
+          <p class="mb-3">
+            Deletes your saved uploads, quizzes, reviews and account. Active
+            subscriptions are cancelled first. This cannot be undone.
+          </p>
+          <form id="deleteAccountForm" class="space-y-3">
+            <label class="block"
+              >Password<input
+                name="password"
+                type="password"
+                required
+                autocomplete="current-password"
+                class="form-input w-full" /></label
+            ><label class="block"
+              >Type your account email<input
+                name="confirm"
+                type="email"
+                required
+                class="form-input w-full" /></label
+            ><button class="btn-danger">Delete my account</button>
+          </form>
+        </section>
+      </div>
+      <p class="mt-6">
+        <a href="/privacy.html" class="underline">Privacy and data handling</a>
+      </p>
+    </main>
+    <script src="/js/api.js"></script>
+    <script src="/js/study-state.js"></script>
+    <script src="/js/exports.js"></script>
+    <script src="/js/account.js"></script>
+  </body>
+</html>

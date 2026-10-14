@@ -7,7 +7,7 @@ const { db } = require('./db'); // Import the Turso client instance
 const { isOwnerUser, isAdminUser, maskPhone } = require('../utils/adminRules');
 const { normalizeEmail } = require('../utils/identity');
 
-const PUBLIC_COLUMNS = 'id, email, created_at, plan, role, is_owner, is_banned, banned_at, ban_reason, phone, phone_verified, stripe_customer_id, billing_provider, premium_until';
+const PUBLIC_COLUMNS = 'id, email, created_at, plan, role, is_owner, is_banned, banned_at, ban_reason, phone, phone_verified, stripe_customer_id, billing_provider, premium_until, session_version';
 
 function formatUser(row, { includePhone = false, includePassword = false } = {}) {
   if (!row) return null;
@@ -109,11 +109,11 @@ class User {
     } catch (error) {
       if ((error.message || '').toLowerCase().includes('no such column')) {
         const fallback = await db.execute({
-          sql: 'SELECT id, email, created_at FROM Users WHERE id = ?',
+          sql: 'SELECT * FROM Users WHERE id = ?',
           args: params,
         });
         if (fallback.rows.length === 0) return null;
-        return formatUser(fallback.rows[0]);
+        return formatUser(fallback.rows[0], { includePhone: true });
       }
       console.error('Error finding user by ID in Turso DB:', error.message);
       throw error;

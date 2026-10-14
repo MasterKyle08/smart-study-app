@@ -4,6 +4,7 @@
  */
 
 const { db } = require('./db'); // Import the Turso client instance
+const { writeTransaction } = require('../utils/transaction');
 
 /**
  * Represents a Study Session.
@@ -31,13 +32,16 @@ class Session {
    * @returns {Promise<object>} A promise that resolves with the new session object.
    * @throws {Error} If an error occurs during database operation.
    */
-  static async create({ userId, originalFilename, originalContentType, extractedText, summary = null, flashcards = null, quiz = null, quizOptions = null }) {
+  static async create({ userId, originalFilename = null, originalContentType = null, extractedText, summary = null, flashcards = null, quiz = null, quizOptions = null, citations = [] }) {
+    if(!await require('../services/localState').hasColumn('Sessions','citations')){
+      const result=await db.execute({sql:'INSERT INTO Sessions(user_id,original_filename,original_content_type,extracted_text,summary,flashcards,quiz,quiz_options) VALUES (?,?,?,?,?,?,?,?)',args:[userId,originalFilename,originalContentType,extractedText,summary,flashcards,quiz,quizOptions?JSON.stringify(quizOptions):null]});return {id:Number(result.lastInsertRowid)};
+    }
     const sql = `
       INSERT INTO Sessions 
-        (user_id, original_filename, original_content_type, extracted_text, summary, flashcards, quiz, quiz_options)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, original_filename, original_content_type, extracted_text, summary, flashcards, quiz, quiz_options,citations)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const params = [userId, originalFilename, originalContentType, extractedText, summary, flashcards, quiz, quizOptions ? JSON.stringify(quizOptions) : null];
+    const params = [userId, originalFilename, originalContentType, extractedText, summary, flashcards, quiz, quizOptions ? JSON.stringify(quizOptions) : null,JSON.stringify(citations)];
     
     try {
       const result = await db.execute({ sql, args: params });
@@ -118,7 +122,7 @@ class Session {
    * @returns {Promise<object>} A promise that resolves with the updated session object.
    * @throws {Error} If no fields provided, session not found, or DB error.
    */
-  static async updateAiContent(id, { summary, flashcards, quiz, quizOptions }) {
+  static async updateAiContent(id, { summary, flashcards, quiz, quizOptions, citations }) {
     const fieldsToUpdate = [];
     const params = [];
 
@@ -138,6 +142,7 @@ class Session {
       fieldsToUpdate.push('quiz_options = ?');
       params.push(JSON.stringify(quizOptions));
     }
+    if(citations!==undefined&&await require('../services/localState').hasColumn('Sessions','citations')){fieldsToUpdate.push('citations = ?');params.push(JSON.stringify(citations));}
 
     if (fieldsToUpdate.length === 0) {
       const error = new Error('No fields provided for update.');
@@ -179,21 +184,13 @@ class Session {
    * @throws {Error} If session not found, user not authorized, or DB error.
    */
   static async deleteById(id, userId) {
-    const sql = 'DELETE FROM Sessions WHERE id = ? AND user_id = ?';
-    const params = [id, userId];
-    try {
-      const result = await db.execute({ sql, args: params });
-      if (result.rowsAffected === 0) {
-        // Either session not found or not owned by this user
-        const error = new Error(`Session with ID ${id} not found or user not authorized to delete.`);
-        error.statusCode = 404; // Or 403 if you prefer for authorization failure
-        throw error;
-      }
+    return writeTransaction(async tx => {
+      const owned = await tx.execute({ sql:'SELECT id FROM Sessions WHERE id=? AND user_id=?', args:[id,userId] });
+      if (!owned.rows.length) throw Object.assign(new Error('Session not found.'), { statusCode:404 });
+      await tx.execute({ sql:'DELETE FROM FlashcardReviews WHERE session_id=? AND user_id=?', args:[id,userId] });
+      await tx.execute({ sql:'DELETE FROM Sessions WHERE id=? AND user_id=?', args:[id,userId] });
       return true;
-    } catch (error) {
-      console.error('Error deleting session from Turso DB:', error.message);
-      throw error;
-    }
+    });
   }
 
   static async deleteByUserId(userId) {

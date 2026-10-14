@@ -15,8 +15,9 @@ router.use(aiInput, aiJob.attachSignal);
 router.get('/', async (req, res) => {
   try {
     const { search } = req.query;
-    const quizzes = await premadeService.listPremadeQuizzes({ search });
-    res.status(200).json({ quizzes });
+    const {limit,before}=require('../utils/page').page(req.query);
+    const quizzes = await premadeService.listPremadeQuizzes({ search:typeof search==='string'?search.slice(0,200):'',limit:limit+1,before });
+    res.status(200).json({ quizzes:quizzes.slice(0,limit),nextCursor:quizzes.length>limit?quizzes[limit-1].id:null });
   } catch (error) {
     console.error('[GET /api/premade] Error:', error.message);
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to load premade quizzes.' });
@@ -25,8 +26,9 @@ router.get('/', async (req, res) => {
 
 router.get('/mine/list', authenticateToken, async (req, res) => {
   try {
-    const quizzes = await premadeService.listMine(req.user.id);
-    res.status(200).json({ quizzes });
+    const {limit,before}=require('../utils/page').page(req.query);
+    const quizzes = await premadeService.listMine(req.user.id,{limit:limit+1,before});
+    res.status(200).json({ quizzes:quizzes.slice(0,limit),nextCursor:quizzes.length>limit?quizzes[limit-1].id:null });
   } catch (error) {
     res.status(error.statusCode || 500).json({ message: error.message || 'Failed to load your quizzes.' });
   }

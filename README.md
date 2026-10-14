@@ -29,11 +29,11 @@ Live site repo: [MasterKyle08/smart-study-app](https://github.com/MasterKyle08/s
 | Client extract | PDF.js, Tesseract.js v5, Mammoth (DOCX) |
 | Backend | Node.js, Express |
 | Database | Turso (libSQL) |
-| Auth | JWT in an httpOnly `ss_token` cookie |
+| Auth | Revocable sessions + JWT in an HttpOnly `ss_token` cookie |
 | Free AI | Google Generative Language API, Gemma 4 |
-| Premium AI | Gemini 3.5 Flash-Lite on a second key |
+| Premium AI | Gemini 2.5 Flash-Lite on a second key |
 | Payments | Stripe (PayPal / Lemon Squeezy hooks exist) |
-| Ads | Google AdSense display (view-to-unlock, not click-to-unlock) |
+| Ads | Google AdSense display; reward claims disabled |
 
 ## Local setup (new laptop)
 
@@ -89,7 +89,7 @@ Fill in when you are ready (already listed in the local `.env` as empty):
 ```
 GOOGLE_FREE_API_KEY=              # optional alias for the free key
 GOOGLE_PREMIUM_API_KEY=           # second AI Studio project for Premium
-GOOGLE_PREMIUM_MODEL_NAME=gemini-3.5-flash-lite
+GOOGLE_PREMIUM_MODEL_NAME=gemini-2.5-flash-lite
 PREMIUM_USER_EMAILS=
 PREMIUM_MONTHLY_PRICE=6
 PREMIUM_PRICE_LABEL=$6 / month

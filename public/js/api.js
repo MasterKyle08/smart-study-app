@@ -134,28 +134,29 @@ const apiFlashcardInteract = (card, interactionType, userAnswer, userQuery, chat
         interactionType,
         userAnswer,
         userQuery,
-        chatHistory
+        chatHistory: window.StudyState.history(chatHistory)
     }, hasAuthToken());
 };
 
 const apiGenerateQuiz = (extractedText, quizOptions) => request('/study/quiz-generate', 'POST', { extractedText, quizOptions }, hasAuthToken());
 
-const apiGetQuizAnswerFeedback = (question, userAnswer) => request('/study/quiz-answer-feedback', 'POST', { question, userAnswer }, hasAuthToken());
+const apiGetQuizAnswerFeedback = (question, userAnswer) => request('/study/quiz-answer-feedback', 'POST', { question: window.StudyState.question(question), userAnswer }, hasAuthToken());
 
-const apiGetQuizQuestionDetailedExplanation = (question) => request('/study/quiz-question-explanation', 'POST', { question }, hasAuthToken());
+const apiGetQuizQuestionDetailedExplanation = (question) => request('/study/quiz-question-explanation', 'POST', { question: window.StudyState.question(question) }, hasAuthToken());
 
-const apiChatAboutQuizQuestion = (question, chatHistory, userQuery) => request('/study/quiz-chat', 'POST', { question, chatHistory, userQuery }, hasAuthToken());
+const apiChatAboutQuizQuestion = (question, chatHistory, userQuery) => request('/study/quiz-chat', 'POST', { question: window.StudyState.question(question), chatHistory: window.StudyState.history(chatHistory), userQuery }, hasAuthToken());
 
-const apiRegenerateQuizQuestion = (originalQuestion, textContext, difficultyHint) => request('/study/quiz-regenerate-question', 'POST', { originalQuestion, textContext, difficultyHint }, hasAuthToken());
+const apiRegenerateQuizQuestion = (originalQuestion, textContext, difficultyHint) => request('/study/quiz-regenerate-question', 'POST', { originalQuestion: window.StudyState.question(originalQuestion), textContext, difficultyHint }, hasAuthToken());
 
 // --- Premade Quiz Library ---
-const apiListPremadeQuizzes = (searchTerm) => {
-  const query = searchTerm && searchTerm.trim() !== '' ? `?search=${encodeURIComponent(searchTerm.trim())}` : '';
+const apiListPremadeQuizzes = (searchTerm,before) => {
+  const params=new URLSearchParams();if(searchTerm)params.set('search',searchTerm.trim());if(before)params.set('before',before);
+  const query=params.size?'?'+params:'';
   return request(`/premade${query}`, 'GET');
 };
 const apiGetPremadeQuiz = (slug) => request(`/premade/${slug}`, 'GET');
 const apiCreatePremadeQuiz = (payload) => request('/premade', 'POST', payload, true);
-const apiListMyPremadeQuizzes = () => request('/premade/mine/list', 'GET', null, true);
+const apiListMyPremadeQuizzes = (before) => request('/premade/mine/list'+(before?'?before='+encodeURIComponent(before):''), 'GET', null, true);
 const apiUpdatePremadeQuiz = (slug, payload) => request(`/premade/${encodeURIComponent(slug)}`, 'PUT', payload, true);
 const apiDeletePremadeQuiz = (slug) => request(`/premade/${encodeURIComponent(slug)}`, 'DELETE', null, true);
 const apiGeneratePractice = (payload) => request('/study/practice', 'POST', payload, hasAuthToken());
@@ -176,8 +177,8 @@ const apiAdminUnlockConfirm = (code) => request('/admin/unlock/confirm', 'POST',
 const apiAdminLock = () => request('/admin/lock', 'POST', {}, true);
 const apiAdminPhoneStart = (phone) => request('/admin/phone/start', 'POST', { phone }, true);
 const apiAdminPhoneConfirm = (code, phone) => request('/admin/phone/confirm', 'POST', { code, phone }, true);
-const apiAdminUsers = (q) => request(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`, 'GET', null, true);
-const apiAdminUser = (id) => request(`/admin/users/${id}`, 'GET', null, true);
+const apiAdminUsers = (q,offset=0) => request(`/admin/users?q=${encodeURIComponent(q||'')}&offset=${Number(offset)||0}`, 'GET', null, true);
+const apiAdminUser = (id,before) => request(`/admin/users/${id}${before?'?before='+encodeURIComponent(before):''}`, 'GET', null, true);
 const apiAdminUserBan = (id, password, reason) => request(`/admin/users/${id}/ban`, 'POST', { password, reason, banned: true }, true);
 const apiAdminUserUnban = (id, password) => request(`/admin/users/${id}/unban`, 'POST', { password }, true);
 const apiAdminUserPlan = (id, plan, password) => request(`/admin/users/${id}/plan`, 'POST', { plan, password }, true);
@@ -185,7 +186,7 @@ const apiAdminUserRole = (id, role, password) => request(`/admin/users/${id}/rol
 const apiAdminUserWipe = (id, password, confirm) => request(`/admin/users/${id}/wipe`, 'POST', { password, confirm }, true);
 const apiAdminUserDelete = (id, password, confirm) => request(`/admin/users/${id}/delete`, 'POST', { password, confirm }, true);
 const apiAdminUserQuota = (id, password, extraJobs) => request(`/admin/users/${id}/quota`, 'POST', { password, extraJobs }, true);
-const apiAdminQuizzes = (search) => request(`/admin/quizzes${search ? `?search=${encodeURIComponent(search)}` : ''}`, 'GET', null, true);
+const apiAdminQuizzes = (search,offset=0) => request(`/admin/quizzes?search=${encodeURIComponent(search||'')}&offset=${Number(offset)||0}`, 'GET', null, true);
 const apiAdminQuizDelete = (slug, password, confirm) => request(`/admin/quizzes/${encodeURIComponent(slug)}/delete`, 'POST', { password, confirm }, true);
 const apiAdminUsage = () => request('/admin/usage', 'GET', null, true);
 const apiAdminAudit = () => request('/admin/audit', 'GET', null, true);

@@ -26,9 +26,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadStatus() {
+    let signedIn=false;
     try {
       const me = await apiGetCurrentUser();
       if (!me.user) throw new Error('not signed in');
+      signedIn=true;
+      window.updateNav(true,me.user.email,me.user.plan||'free',Boolean(me.user.isAdmin));
       if (!me.user.isAdmin) {
         setVisible('notSignedIn', false);
         setVisible('notAdmin', true);
@@ -55,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else hint.textContent = 'Configure Twilio or email on the server to send 2FA codes.';
       }
     } catch (error) {
+      if(!signedIn||error.status===401)window.updateNav(false);
       setVisible('notSignedIn', true);
       setVisible('notAdmin', false);
       setVisible('phoneEnroll', false);
@@ -123,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('lockAdminButton').addEventListener('click', async () => {
-    try { await apiAdminLock(); } catch (_err) { /* ignore */ }
+    try { await apiAdminLock(); } catch (error) { showGateMsg(error.message);return; }
     app.classList.add('hidden');
     gate.classList.remove('hidden');
     document.getElementById('lockAdminButton').classList.add('hidden');
@@ -137,18 +141,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('logoutNavButton').addEventListener('click', async () => {
-    try { if (typeof apiLogout === 'function') await apiLogout(); } catch (_err) { /* ignore */ }
-    localStorage.removeItem('userEmail');
+    try { if (typeof apiLogout === 'function') await apiLogout(); } catch (error) { showGateMsg(error.message);return; }
+    window.StudyState?.clearPrivateStorage();
+            localStorage.removeItem('userEmail');
     localStorage.removeItem('userPlan');
     localStorage.removeItem('userIsAdmin');
     window.location.href = '/';
   });
 
-  async function loadUsers() {
+  async function loadUsers(offset=0) {
+    if(typeof offset!=='number')offset=0;
     const box = document.getElementById('usersList');
     box.textContent = 'Loading…';
     try {
-      const { users } = await apiAdminUsers(document.getElementById('userSearch').value);
+      const { users,nextOffset } = await apiAdminUsers(document.getElementById('userSearch').value,offset);
       if (!users.length) {
         box.textContent = 'No users found.';
         return;
@@ -158,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="font-medium">${escapeHtml(user.email)}</span>
           <span class="block text-xs mt-1" style="color:var(--muted)">${escapeHtml(user.plan)} · ${user.isAdmin ? 'admin' : 'user'}${user.isBanned ? ' · banned' : ''}${user.isOwner ? ' · owner' : ''}</span>
         </button>`).join('');
+      addPageControls(box,offset,nextOffset,loadUsers);
       box.querySelectorAll('[data-user-id]').forEach((btn) => {
         btn.addEventListener('click', () => loadUserDetail(btn.getAttribute('data-user-id')));
       });
@@ -171,12 +178,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (event.key === 'Enter') loadUsers();
   });
 
-  async function loadUserDetail(id) {
+  async function loadUserDetail(id,before) {
     selectedUserId = id;
     const box = document.getElementById('userDetail');
     box.textContent = 'Loading…';
     try {
-      const detail = await apiAdminUser(id);
+      const detail = await apiAdminUser(id,before);
       const user = detail.user;
       const sessions = detail.sessions || [];
       const quizzes = detail.quizzes || [];
@@ -208,6 +215,8 @@ document.addEventListener('DOMContentLoaded', () => {
       box.querySelectorAll('[data-act]').forEach((btn) => {
         btn.addEventListener('click', () => runUserAction(user, btn.getAttribute('data-act')));
       });
+      if(detail.nextCursor){const next=document.createElement('button');next.className='btn-secondary mt-3';next.textContent='Older saved uploads';next.onclick=()=>loadUserDetail(id,detail.nextCursor);box.append(next);}
+      if(before){const first=document.createElement('button');first.className='btn-secondary mt-3';first.textContent='Newest uploads';first.onclick=()=>loadUserDetail(id);box.append(first);}
     } catch (error) {
       box.textContent = error.message || 'Could not load user.';
     }
@@ -317,11 +326,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function loadQuizzes() {
+  function addPageControls(box,offset,next,load){
+    const controls=document.createElement('div');controls.className='flex gap-2 mt-3';
+    for(const [label,value] of [['Previous page',offset>0?Math.max(0,offset-24):null],['Next page',next]]){if(value==null)continue;const button=document.createElement('button');button.className='btn-secondary';button.textContent=label;button.onclick=()=>load(value);controls.append(button);}
+    box.append(controls);
+  }
+
+  async function loadQuizzes(offset=0) {
+    if(typeof offset!=='number')offset=0;
     const box = document.getElementById('quizList');
     box.textContent = 'Loading…';
     try {
-      const { quizzes } = await apiAdminQuizzes(document.getElementById('quizSearch').value);
+      const { quizzes,nextOffset } = await apiAdminQuizzes(document.getElementById('quizSearch').value,offset);
       if (!quizzes.length) {
         box.textContent = 'No quizzes found.';
         return;
@@ -334,6 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <button class="btn-danger" data-slug="${escapeHtml(quiz.slug)}">Delete</button>
         </div>`).join('');
+      addPageControls(box,offset,nextOffset,loadQuizzes);
       box.querySelectorAll('[data-slug]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const slug = btn.getAttribute('data-slug');
@@ -364,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const box = document.getElementById('usagePanel');
     try {
       const data = await apiAdminUsage();
+      const reliability=await request('/admin/reliability','GET',null,true);
       const community = data.selfCount || {};
       const google = data.googleCloud || {};
       const rows = (data.topUsersToday || []).map((row) => `
@@ -375,6 +393,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <td class="py-1">${row.inputTokens} / ${row.outputTokens}</td>
         </tr>`).join('');
       box.innerHTML = `
+        <h3 class="font-semibold mb-2">AI reliability · last 7 days</h3>
+        <p class="mb-2">Provider response success: <strong>${reliability.providerResponseSuccessPercent==null?'No attempts yet':Number(reliability.providerResponseSuccessPercent)+'%'}</strong> · ${Number(reliability.providerAttempts||0)} attempts</p>
+        <p class="text-xs mb-3">${escapeHtml(reliability.note)}</p>
+        <div class="overflow-x-auto mb-4"><table class="text-xs text-left"><thead><tr><th class="pr-3">Model</th><th class="pr-3">Outcome</th><th class="pr-3">Attempts</th><th class="pr-3">Average / queue / provider ms</th></tr></thead><tbody>${(reliability.groups||[]).map(row=>`<tr><td class="pr-3">${escapeHtml(row.model)}</td><td class="pr-3">${escapeHtml(row.outcome)}${row.status?' ('+escapeHtml(row.status)+')':''}</td><td class="pr-3">${Number(row.count)}</td><td>${Number(row.average_ms)} / ${Number(row.queue_ms)} / ${Number(row.provider_ms)}</td></tr>`).join('')||'<tr><td colspan="4">No attempts recorded yet.</td></tr>'}</tbody></table></div>
         <h3 class="font-semibold mb-2">Smart Study counter (primary)</h3>
         <p>Gemma requests today: <strong>${community.gemmaUsed}</strong> / ${community.gemmaBudget}</p>
         <p>Estimated tokens: ${community.estimatedInputTokens} in / ${community.estimatedOutputTokens} out</p>

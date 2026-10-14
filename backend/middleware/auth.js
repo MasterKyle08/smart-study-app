@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { getTokenFromRequest, getAdminTokenFromRequest } = require('../utils/cookies');
 const { isAdminUser } = require('../utils/adminRules');
+const loginSessions = require('../services/loginSessions');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -14,8 +15,9 @@ async function userFromRequest(req) {
   const token = getTokenFromRequest(req);
   if (!token || !JWT_SECRET) return null;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.userId);
+    const decoded = await loginSessions.read(token);
+    if (!decoded) return null;
+    const user = decoded.user;
     return user || null;
   } catch (_err) {
     return null;
@@ -29,8 +31,9 @@ async function authenticateToken(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.userId);
+    const decoded = await loginSessions.read(token);
+    if (!decoded) return res.status(401).json({ message: 'Session expired. Sign in again.' });
+    const user = decoded.user;
     if (!user) {
       return res.status(401).json({ message: 'Invalid token. User not found.' });
     }
@@ -38,6 +41,7 @@ async function authenticateToken(req, res, next) {
       return res.status(403).json({ message: 'This account has been disabled.' });
     }
     req.user = user;
+    req.loginSession = decoded;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -59,12 +63,14 @@ function requireAdminRole(req, res, next) {
 }
 
 async function requireAdminSession(req, res, next) {
+  try {
   if (!req.user || !isAdminUser(req.user)) {
     return res.status(403).json({ message: 'Admin access required.' });
   }
   const adminService = require('../services/admin');
   const decoded = adminService.readAdminToken(getAdminTokenFromRequest(req));
-  if (!decoded || Number(decoded.userId) !== Number(req.user.id)) {
+  const session=decoded&&decoded.sid===req.loginSession?.sid?(await (await require('../services/localState').securityDB()).execute({sql:'SELECT admin_generation FROM AuthSessions WHERE id=?',args:[decoded.sid]})).rows[0]:null;
+  if (!decoded || !session || Number(decoded.generation)!==Number(session.admin_generation) || Number(decoded.userId) !== Number(req.user.id) || Number(decoded.version) !== Number(req.user.session_version || 0)) {
     return res.status(401).json({
       message: 'Enter admin mode with a 2FA code first.',
       code: 'ADMIN_STEP_UP_REQUIRED',
@@ -72,6 +78,7 @@ async function requireAdminSession(req, res, next) {
   }
   req.adminSession = decoded;
   next();
+  }catch(error){next(error);}
 }
 
 module.exports = authenticateToken;

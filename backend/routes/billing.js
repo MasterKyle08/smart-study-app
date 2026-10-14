@@ -3,6 +3,7 @@ const authenticateToken = require('../middleware/auth');
 const billing = require('../services/billing');
 
 const router = express.Router();
+router.post('/portal',authenticateToken,async(req,res)=>{try{res.json(await billing.portal(req.user));}catch(error){res.status(error.statusCode||502).json({message:error.message});}});
 
 router.get('/config', (req, res) => {
   res.json(billing.publicConfig());

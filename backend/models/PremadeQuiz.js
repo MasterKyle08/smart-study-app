@@ -5,6 +5,9 @@
 
 const { db } = require('./db');
 const { normalizeQuizOptions } = require('../utils/quizOptions');
+const PREVIEW = "id,user_id,title,slug,description,topic,tags,folder,quiz_options,is_public,created_at,updated_at,CASE WHEN json_valid(quiz_json) THEN json_array_length(quiz_json) ELSE 0 END AS question_count";
+
+async function preview(){return (await require('../services/localState').hasColumn('PremadeQuizzes','folder'))?PREVIEW:PREVIEW.replace('tags,folder,',"tags,'' AS folder,");}
 
 class PremadeQuiz {
   static #formatRow(row, { includeQuiz = false } = {}) {
@@ -48,7 +51,8 @@ class PremadeQuiz {
       tags,
       sourceText: includeQuiz ? row.source_text : undefined,
       quizOptions,
-      questionCount: Array.isArray(quizArray) ? quizArray.length : 0,
+      questionCount: row.question_count == null ? (Array.isArray(quizArray) ? quizArray.length : 0) : Number(row.question_count),
+      folder: row.folder || '',
       quiz: includeQuiz ? quizArray : undefined,
       isPublic: row.is_public === 1,
       createdAt: row.created_at,
@@ -98,10 +102,10 @@ class PremadeQuiz {
     return this.#formatRow(result.rows[0], { includeQuiz });
   }
 
-  static async listByUserId(userId) {
+  static async listByUserId(userId,{before=null,limit=24}={}) {
     const result = await db.execute({
-      sql: 'SELECT * FROM PremadeQuizzes WHERE user_id = ? ORDER BY updated_at DESC',
-      args: [userId],
+      sql: `SELECT ${await preview()} FROM PremadeQuizzes WHERE user_id = ?${before?' AND id < ?':''} ORDER BY id DESC LIMIT ?`,
+      args: [userId,...(before?[before]:[]),Math.min(51,Math.max(1,Number(limit)||24))],
     });
     return result.rows.map((row) => this.#formatRow(row, { includeQuiz: false }));
   }
@@ -156,22 +160,22 @@ class PremadeQuiz {
     return result.rowsAffected || 0;
   }
 
-  static async listAll({ search, limit = 50 } = {}) {
-    let sql = 'SELECT * FROM PremadeQuizzes';
+  static async listAll({ search, limit = 50, offset = 0 } = {}) {
+    let sql = `SELECT ${await preview()} FROM PremadeQuizzes`;
     const params = [];
     if (search && String(search).trim() !== '') {
       sql += ' WHERE (LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(topic) LIKE ? OR LOWER(slug) LIKE ?)';
       const likeTerm = `%${String(search).trim().toLowerCase()}%`;
       params.push(likeTerm, likeTerm, likeTerm, likeTerm);
     }
-    sql += ' ORDER BY updated_at DESC LIMIT ?';
-    params.push(Math.min(100, Number(limit) || 50));
+    sql += ' ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?';
+    params.push(Math.min(100, Number(limit) || 50),Math.max(0,Math.min(100000,Number(offset)||0)));
     const result = await db.execute({ sql, args: params });
     return result.rows.map((row) => this.#formatRow(row, { includeQuiz: false }));
   }
 
-  static async listPublic({ search, limit = 50 } = {}) {
-    let sql = 'SELECT * FROM PremadeQuizzes WHERE is_public = 1';
+  static async listPublic({ search, limit = 24,before=null } = {}) {
+    let sql = `SELECT ${await preview()} FROM PremadeQuizzes WHERE is_public = 1`;
     const params = [];
 
     if (search && search.trim() !== '') {
@@ -180,7 +184,8 @@ class PremadeQuiz {
       params.push(likeTerm, likeTerm, likeTerm, likeTerm);
     }
 
-    sql += ' ORDER BY created_at DESC LIMIT ?';
+    if(before){sql+=' AND id < ?';params.push(before);}
+    sql += ' ORDER BY id DESC LIMIT ?';
     params.push(limit);
 
     const result = await db.execute({ sql, args: params });

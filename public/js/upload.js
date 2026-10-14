@@ -16,6 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let ocrWorkerPromise = null;
     let ocrStatus = null;
     const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    const MAX_FILES=5,MAX_TOTAL_BYTES=30*1024*1024;
+    let extractionDeadline=0;
+    function checkExtraction(){if(Date.now()>extractionDeadline)throw new Error('Reading took too long. Upload fewer or smaller pages.');}
+    async function bounded(promise){const remaining=extractionDeadline-Date.now();if(remaining<=0){checkExtraction();}let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Reading took too long. Upload fewer or smaller pages.')),remaining);})]);}finally{clearTimeout(timer);}}
     const MAX_OCR_PDF_PAGES = 8;
     const MAX_VISION_IMAGES = 3;
     const MIME_FROM_EXT = {
@@ -88,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleFiles(newFiles) {
         newFiles.forEach((file) => {
             if (isValidFile(file)) {
+                if(filesToProcess.length>=MAX_FILES||filesToProcess.reduce((n,item)=>n+item.size,0)+file.size>MAX_TOTAL_BYTES){window.showMessage('processingStatus','Use at most five files totaling 30 MB per upload.','error');return;}
                 if (!filesToProcess.some((existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified)) {
                     filesToProcess.push(file);
                 } else if (typeof window.showMessage === 'function') {
@@ -150,14 +155,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fileToVisionImage(file) {
-        const bitmap = await createImageBitmap(file);
+        const bitmap = await bounded(createImageBitmap(file));
+        try {
         const maxEdge = 1280;
         const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(bitmap.width * scale));
         canvas.height = Math.max(1, Math.round(bitmap.height * scale));
         canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        return canvasToVisionImage(canvas);
+        return await canvasToVisionImage(canvas);
+        } finally { bitmap.close(); }
     }
 
     function hasPasteText() {
@@ -180,22 +187,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 onStatus(`OCR: ${message.status}...`);
             }
         };
-        try {
-            return await Tesseract.createWorker('eng', 1, { logger });
-        } catch (_err) {
-            const worker = await Tesseract.createWorker({ logger });
-            if (typeof worker.loadLanguage === 'function') await worker.loadLanguage('eng');
-            if (typeof worker.initialize === 'function') await worker.initialize('eng');
-            return worker;
-        }
+        return Tesseract.createWorker('eng',1,{logger,workerPath:'/vendor/tesseract.js/worker.min.js',corePath:'/vendor/tesseract.js-core/',langPath:'https://tessdata.projectnaptha.com/4.0.0'});
     }
 
     async function ocrSource(source, onStatus) {
         ocrStatus = onStatus;
         if (!ocrWorkerPromise) ocrWorkerPromise = createOcrWorker(status => ocrStatus?.(status));
-        const worker = await ocrWorkerPromise;
+        const worker = await bounded(ocrWorkerPromise);
         try {
-            const { data: { text } } = await worker.recognize(source);
+            const { data: { text } } = await bounded(worker.recognize(source));
+            if((text||'').length>120000)throw new Error('This image exceeds the text limit. Use a smaller image.');
             return text || '';
         } finally {
             ocrStatus = null;
@@ -209,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const context = canvas.getContext('2d', { willReadFrequently: true });
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        await page.render({ canvasContext: context, viewport }).promise;
+        await bounded(page.render({ canvasContext: context, viewport }).promise);
         return canvas;
     }
 
@@ -222,20 +223,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
             if (typeof mammoth === 'undefined') throw new Error('DOCX reader failed to load. Refresh and try again.');
             const arrayBuffer = await file.arrayBuffer();
+            window.DocumentLimits.docx(arrayBuffer);
             const images = [];
-            const htmlResult = await mammoth.convertToHtml({ arrayBuffer }, {
+            const htmlResult = await bounded(mammoth.convertToHtml({ arrayBuffer }, {
                 convertImage: mammoth.images.imgElement(async (image) => {
-                    const base64 = await image.read('base64');
+                    if(images.length>=MAX_VISION_IMAGES||!['image/png','image/jpeg','image/webp'].includes(image.contentType))return {src:''};
+                    const base64 = await bounded(image.read('base64'));
                     if (images.length < MAX_VISION_IMAGES && ['image/png', 'image/jpeg', 'image/webp'].includes(image.contentType) && base64.length <= 3000000) {
                         images.push({ mimeType: image.contentType || 'image/png', data: base64 });
                     }
                     return { src: `data:${image.contentType};base64,${base64}` };
                 }),
-            });
+            }));
             images.forEach((img) => {
                 if (pendingVisionFromPdf.length < MAX_VISION_IMAGES) pendingVisionFromPdf.push(img);
             });
-            const textResult = await mammoth.extractRawText({ arrayBuffer });
+            const textResult = await bounded(mammoth.extractRawText({ arrayBuffer }));
             return (textResult.value || '') + (htmlResult.value && !textResult.value ? htmlResult.value.replace(/<[^>]+>/g, ' ') : '');
         }
 
@@ -256,19 +259,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const typedArray = new Uint8Array(await file.arrayBuffer());
             const loadingTask = pdfjsLib.getDocument({ data: typedArray, isEvalSupported: false, cMapUrl: '/vendor/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: '/vendor/pdfjs/standard_fonts/', wasmUrl: '/vendor/pdfjs/wasm/', maxImageSize: 16000000 });
             try {
-                const pdf = await loadingTask.promise;
+                const pdf = await bounded(loadingTask.promise);
+                if(pdf.numPages>100)throw new Error('This PDF exceeds 100 pages. Split it into smaller uploads.');
                 let fullText = '';
                 for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+                    checkExtraction();
                     if (typeof window.showProcessingStatus === 'function') {
                         window.showProcessingStatus('processingStatus', `Reading PDF page ${pageNumber}/${pdf.numPages}...`, true);
                     }
-                    const page = await pdf.getPage(pageNumber);
-                    const textContent = await page.getTextContent();
+                    const page = await bounded(pdf.getPage(pageNumber));
+                    const textContent = await bounded(page.getTextContent());
                     const pageText = textContent.items.map((item) => item.str).join(' ').trim();
-                    fullText += `${pageText}\n`;
+                    fullText += `[Source: ${file.name.replace(/[\]\n]/g,' ')} | Page: ${pageNumber}]\n${pageText}\n`;
+                    if(fullText.length>120000)throw new Error('This PDF exceeds the text limit. Split it into smaller uploads.');
                 }
 
-                const compact = fullText.replace(/\s+/g, ' ').trim();
+                const compact = fullText.replace(/\[Source:[^\]\n]*\]/g,'').replace(/\s+/g, ' ').trim();
                 const looksScanned = compact.length < Math.max(80, pdf.numPages * 40);
                 if (looksScanned) {
                     const pagesToOcr = Math.min(pdf.numPages, MAX_OCR_PDF_PAGES);
@@ -277,17 +283,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (typeof window.showProcessingStatus === 'function') {
                             window.showProcessingStatus('processingStatus', `Worksheet looks scanned. OCRing PDF page ${pageNumber}/${pagesToOcr}...`, true);
                         }
-                        const page = await pdf.getPage(pageNumber);
+                        const page = await bounded(pdf.getPage(pageNumber));
                         const canvas = await renderPdfPageToCanvas(page);
                         if (pendingVisionFromPdf.length < MAX_VISION_IMAGES) {
                             try { pendingVisionFromPdf.push(await canvasToVisionImage(canvas)); } catch (_err) { /* OCR still runs */ }
                         }
-                        ocrText += `${await ocrSource(canvas, (status) => {
+                        ocrText += `[Source: ${file.name.replace(/[\]\n]/g,' ')} | Page: ${pageNumber}]\n${await ocrSource(canvas, (status) => {
                             if (typeof window.showProcessingStatus === 'function') {
                                 window.showProcessingStatus('processingStatus', `Page ${pageNumber}: ${status}`, true);
                             }
                         })}\n`;
                     }
+                    if(ocrText.length>120000)throw new Error('Scanned text exceeds the upload limit. Split the PDF.');
                     if (pdf.numPages > MAX_OCR_PDF_PAGES) {
                         ocrText += `\n[Only the first ${MAX_OCR_PDF_PAGES} pages were scanned for handwritten or image-based PDFs.]\n`;
                     }
@@ -347,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let combinedText = '';
+        extractionDeadline=Date.now()+90000;
         let firstFileName = filesToProcess.length > 0 ? filesToProcess[0].name : 'pasted-notes.txt';
         let firstFileType = filesToProcess.length > 0 ? getFileType(filesToProcess[0]) : 'text/plain';
         const visionImages = [];
@@ -357,7 +365,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const file = filesToProcess[index];
                 setProgress(12 + Math.round((index / Math.max(filesToProcess.length, 1)) * 40), `Reading ${file.name}...`);
                 const text = await extractTextFromFile(file);
-                combinedText += `${text}\n\n`;
+                combinedText += `[Source: ${file.name.replace(/[\]\n]/g,' ')}]\n${text}\n\n`;
+                if(combinedText.length>120000)throw new Error('These files exceed the text limit. Split them into smaller uploads.');
                 const type = getFileType(file);
                 if (['image/jpeg', 'image/png', 'image/webp'].includes(type) && visionImages.length < MAX_VISION_IMAGES) {
                     try { visionImages.push(await fileToVisionImage(file)); } catch (_err) { /* keep OCR text */ }
@@ -370,7 +379,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 combinedText += `${pasteNotesInput.value.trim()}\n\n`;
             }
 
-            if (combinedText.replace(/\s+/g, ' ').trim().length < 20 && !visionImages.length) {
+            const readableText=combinedText.replace(/\[Source:[^\]\n]*\]/g,'').replace(/\s+/g,' ').trim();
+            if (readableText.length < 20 && !visionImages.length) {
                 if (typeof window.showMessage === 'function') {
                     window.showMessage('processingStatus', 'Not enough readable text was found. If this is a photo or scanned worksheet, try a clearer image, or paste the notes instead.', 'error');
                 }
@@ -379,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             window.currentExtractedTextForQuiz = combinedText.trim();
             if (combinedText.length > 120000) throw new Error('These notes exceed the upload limit. Split them into smaller uploads for complete coverage.');
-            const neededVisionImages = combinedText.replace(/\s+/g, ' ').trim().length < 250 ? visionImages : [];
+            const neededVisionImages = readableText.length < 250 ? visionImages : [];
             setProgress(62, neededVisionImages.length ? 'Sending worksheet image(s) to Gemma 4 vision, then generating materials...' : 'Generating study materials...');
             if (typeof window.showProcessingStatus === 'function') {
                 window.showProcessingStatus('processingStatus', neededVisionImages.length
@@ -416,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideProgress();
         } finally {
             if (ocrWorkerPromise) {
-                try { const worker = await ocrWorkerPromise; await worker.terminate(); } catch (_error) { /* failed worker is discarded */ }
+                ocrWorkerPromise.then(worker=>worker.terminate()).catch(()=>{});
                 ocrWorkerPromise = null;
                 ocrStatus = null;
             }

@@ -53,6 +53,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         if (typeof apiGetCurrentUser !== 'function') throw new Error('missing auth');
         const me = await apiGetCurrentUser();
+        if(!me?.user)throw new Error('Sign in to view your dashboard.');
+        localStorage.setItem('userEmail',me.user.email);
+        localStorage.setItem('userPlan',me.user.plan||'free');
+        localStorage.setItem('userIsAdmin',me.user.isAdmin?'1':'0');
+        window.updateNav(true,me.user.email,me.user.plan||'free',Boolean(me.user.isAdmin));
         if (me && me.user && me.user.isAdmin) {
             localStorage.setItem('userIsAdmin', '1');
             document.querySelectorAll('.nav-auth-admin').forEach((el) => el.classList.remove('hidden'));
@@ -99,7 +104,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             sessionsListContainer.replaceChildren(notice);
              if (error.status === 401) { 
                 localStorage.removeItem('authToken'); 
-                localStorage.removeItem('userEmail');
+                window.StudyState?.clearPrivateStorage();
+            localStorage.removeItem('userEmail');
                 window.location.href = 'index.html';
             }
         } finally {
@@ -343,6 +349,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             currentKeywordsForModalHighlighting = []; 
             if(modalSummaryOutput) renderModalSummary(session.summary, currentKeywordsForModalHighlighting);
+            window.StudyState?.appendCitations(modalSummaryOutput,session.citations);
             
             if (modalFlashcardsOutputPlaceholder) {
                 modalFlashcardsOutputPlaceholder.innerHTML = ''; 
@@ -428,6 +435,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
     }
+    window.openSavedSession = openSessionDetailModal;
     
     function closeSessionReader() {
         if (typeof window.toggleElementVisibility === 'function') window.toggleElementVisibility('sessionDetailModal', false);
@@ -547,6 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.currentDashboardSessionData = updatedSession; 
                 if(regenerateStatus && typeof window.showMessage === 'function') window.showMessage('regenerateStatus', updatedSession.warnings?.length ? updatedSession.warnings.join(' ') : 'Content regenerated successfully!', updatedSession.warnings?.length ? 'warning' : 'success', updatedSession.warnings?.length ? 0 : 3000);
                 if(modalSummaryOutput) renderModalSummary(updatedSession.summary, currentKeywordsForModalHighlighting);
+                window.StudyState?.appendCitations(modalSummaryOutput,updatedSession.citations);
                 
                 if (modalFlashcardsOutputPlaceholder) modalFlashcardsOutputPlaceholder.innerHTML = ''; 
                 if (modalFlashcardsOutputRaw) modalFlashcardsOutputRaw.value = (updatedSession.flashcards && Array.isArray(updatedSession.flashcards)) ? JSON.stringify(updatedSession.flashcards, null, 2) : '';
@@ -676,10 +685,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(typeof window.setCurrentYear === 'function') window.setCurrentYear('currentYearDashboard');
     loadUserSessions();
     const dueList = document.getElementById('dueCardsList');
+    async function refreshDueCards() {
     if (dueList && typeof apiListFlashcardReviews === 'function') {
         try {
             const { reviews } = await apiListFlashcardReviews(null, { dueOnly: true });
             const due = (reviews || []).filter((item) => !item.dueAt || new Date(item.dueAt) <= new Date());
+            const studyDue=document.getElementById('studyDueButton');
+            if(studyDue){studyDue.disabled=!due.some(item=>item.definition);studyDue.onclick=()=>{const cards=due.filter(item=>item.definition).map(item=>({term:item.term||item.cardKey,definition:item.definition,sessionId:item.sessionId,isDueReview:true}));window.dueReviewActive=true;window.renderInteractiveFlashcards(document.getElementById('flashcardModalContent-modal'),cards,[],'modal');window.toggleElementVisibility('flashcardStudyModal-modal',true);};}
             if (!due.length) {
                 dueList.textContent = 'Nothing is due. Study flashcards and rate them Again/Hard/Good/Easy to fill this list.';
             } else {
@@ -697,6 +709,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             dueList.textContent = 'Could not load due cards.';
         }
     }
+    }
+    window.refreshDueCards=refreshDueCards;
+    await refreshDueCards();
 
     const upgradeButton = document.getElementById('upgradeButton');
     if (upgradeButton) {
@@ -705,17 +720,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const config = await apiBillingConfig();
                 const copy = document.getElementById('billingCopy');
                 if (copy) {
-                    copy.textContent = (config.pricing && config.pricing.why)
-                        || (config.premiumEnabled
-                            ? `Premium is ${config.monthlyPriceLabel}. Stripe checkout is ready.`
-                            : `Premium is ${config.monthlyPriceLabel}. Add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to enable checkout.`);
+                    copy.textContent = config.premiumEnabled
+                        ? (config.pricing?.why || `Premium is ${config.monthlyPriceLabel || '$5 / month'}.`)
+                        : 'Premium subscriptions are currently unavailable. You can keep using the free plan.';
                 }
                 const notes = document.getElementById('pricingNotes');
                 if (notes && config.pricing && Array.isArray(config.pricing.costNotes)) {
-                    notes.innerHTML = config.pricing.costNotes.map((line) => `<li>${line}</li>`).join('');
+                    notes.replaceChildren(...config.pricing.costNotes.map(line=>{const item=document.createElement('li');item.textContent=line;return item;}));
                 }
                 upgradeButton.textContent = `Upgrade ${config.monthlyPriceLabel || '$5 / month'}`;
-                upgradeButton.disabled = !config.providers.stripe;
+                upgradeButton.disabled = !config.providers?.stripe;
             } catch (_err) {
                 upgradeButton.disabled = true;
             }

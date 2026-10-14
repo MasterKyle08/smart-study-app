@@ -75,7 +75,7 @@ for (const theme of ['light', 'dark']) {
       await expect(regenerate).toBeInViewport();
       await expect(remove).toBeInViewport();
       // Finish the opening transition before measuring layout/sizing.
-      await expect.poll(() => modal.locator('.session-reader').evaluate(element => getComputedStyle(element).transform)).toBe('matrix(1, 0, 0, 1, 0, 0)');
+      await expect.poll(() => modal.locator('.session-reader').evaluate(element => {const css=getComputedStyle(element);return css.opacity==='1' && ['none','1'].includes(css.scale) && ['none','matrix(1, 0, 0, 1, 0, 0)'].includes(css.transform);})).toBe(true);
       const bounds = await modal.locator('.session-reader').boundingBox();
       expect(bounds.x).toBeGreaterThanOrEqual(0);
       expect(bounds.y).toBeGreaterThanOrEqual(0);

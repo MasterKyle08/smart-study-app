@@ -8,9 +8,9 @@
     "vendor:build": "node scripts/build-vendor.js",
     "pretest": "npm run vendor:build",
     "start": "node server.js",
-    "dev": "concurrently \"nodemon server.js\" \"npm run tailwind:watch\"",
+    "dev": "concurrently \"node --watch server.js\" \"npm run tailwind:watch\"",
     "init-db": "node ./backend/models/db.js init",
-    "test": "node --test ./backend/tests/studyContent.test.js ./backend/tests/admin.test.js ./backend/tests/aiRequests.test.js ./backend/tests/environment.test.js ./backend/tests/security.test.js",
+    "test": "node --test ./backend/tests/studyContent.test.js ./backend/tests/admin.test.js ./backend/tests/aiRequests.test.js ./backend/tests/environment.test.js ./backend/tests/security.test.js ./backend/tests/followup.test.js ./backend/tests/localCompatibility.test.js",
     "test:oracle": "node --test ./backend/tests/oracle.test.js",
     "test:ui": "playwright test",
     "tailwind:build": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css",
@@ -29,11 +29,8 @@
   "license": "MIT",
   "dependencies": {
     "@libsql/client": "^0.15.8",
-    "@tailwindcss/forms": "^0.5.10",
-    "@tailwindcss/typography": "^0.5.16",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
@@ -44,12 +41,22 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
-    "autoprefixer": "^10.4.19",
+    "@tailwindcss/cli": "^4.3.3",
+    "@tailwindcss/forms": "^0.5.11",
+    "@tailwindcss/typography": "^0.5.20",
     "concurrently": "^8.2.2",
-    "nodemon": "^3.0.2",
+    "katex": "^0.19.0",
+    "mammoth": "^1.13.0",
     "pdfjs-dist": "^6.4.299",
-    "postcss": "^8.4.38",
-    "tailwindcss": "^3.4.3"
+    "tailwindcss": "^4.3.3",
+    "tesseract.js": "^5.1.1"
   },
-  "type": "commonjs"
+  "type": "commonjs",
+  "overrides": {
+    "postcss-selector-parser": "^7.1.6",
+    "@parcel/watcher": "^2.6.0",
+    "mammoth": {
+      "argparse": "^2.0.1"
+    }
+  }
 }

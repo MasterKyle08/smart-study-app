@@ -83,6 +83,7 @@ function createGoogleRequester({
       let reservation;
       let usageReservation;
       let dispatched = false;
+      let logged=false;
       const started = now();
       try {
         unlock = await acquire(deadline, premium, signal);
@@ -120,7 +121,7 @@ function createGoogleRequester({
             break;
           }
         }
-        usageReservation = await beforeRequest(payload, { premium, modelName: currentModel });
+        usageReservation = await beforeRequest(payload, { premium, modelName: currentModel, deadline });
         if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
         const remaining = deadline - now();
         if (remaining <= 0) throw Object.assign(new Error('The AI took too long to respond.'), { statusCode: 504 });
@@ -139,6 +140,7 @@ function createGoogleRequester({
         const data = await response.json().catch(() => ({}));
         const inputTokens = Number(data.usageMetadata?.promptTokenCount || data.usage_metadata?.prompt_token_count || 0);
         if (reservation && inputTokens > 0) reservation.tokens = inputTokens;
+        logged=true;
         log({ model: currentModel, status: response.status, attempt: attempt + 1, elapsedMs: now() - started, queueMs: providerStarted - started, providerMs: now() - providerStarted, finishReason: data.candidates?.[0]?.finishReason, inputTokens: inputTokens || undefined });
         if (!response.ok) {
           const error = new Error(data.error?.message || `Google AI request failed (${response.status}).`);
@@ -175,11 +177,13 @@ function createGoogleRequester({
         try { await afterResponse(usageReservation, data); } catch (_error) { /* keep conservative reservation */ }
         return { data, modelName: currentModel };
       } catch (error) {
-        if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });
+        if (signal?.aborted){if(!logged)log({model:currentModel,status:499,outcome:'cancelled',elapsedMs:now()-started});throw Object.assign(new Error('Request cancelled.'), { statusCode: 499 });}
         if (error.name === 'AbortError') {
           error = Object.assign(new Error('The AI took too long to respond. Try a shorter document or fewer questions.'), { statusCode: 504, timedOut: true });
+          logged=true;
           log({ model: currentModel, status: 'timeout', attempt: attempt + 1, elapsedMs: now() - started, queueMs: providerStarted - started, providerMs: now() - providerStarted });
         }
+        if(!logged)log({model:currentModel,status:error.statusCode||502,outcome:dispatched?'network-error':'admission-error',elapsedMs:now()-started,queueMs:dispatched?providerStarted-started:now()-started,providerMs:dispatched?now()-providerStarted:0});
         const providerUnavailable = error.timedOut || error.googleStatus >= 500;
         if (!premium && fallbackModelName && currentModel === modelName && providerUnavailable) {
           unavailableUntil.set(modelName, now() + cooldownMs);

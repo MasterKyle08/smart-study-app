@@ -1,8 +1,10 @@
 async function contrast(page, selector, pseudo = null, property = 'color') {
   return page.locator(selector).first().evaluate((element, { pseudoElement, property }) => {
     const parse = value => {
-      const parts = value.match(/[\d.]+/g)?.map(Number) || [0, 0, 0];
-      return [parts[0], parts[1], parts[2], parts[3] ?? 1];
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+      const context=canvas.getContext('2d',{willReadFrequently:true});context.clearRect(0,0,1,1);context.fillStyle=value;context.fillRect(0,0,1,1);
+      const pixels=context.getImageData(0,0,1,1).data;
+      return [pixels[0],pixels[1],pixels[2],pixels[3]/255];
     };
     const blend = (foreground, background) => foreground.slice(0, 3).map((v, i) => v * foreground[3] + background[i] * (1 - foreground[3]));
     const ancestry = [];

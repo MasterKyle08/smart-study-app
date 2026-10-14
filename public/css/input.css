@@ -1,6 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@config "../../tailwind.config.js";
+@source "../*.html";
+@source "../js/*.js";
+
+/* Reading text takes precedence over compact control utility sizing. */
+.session-reader #modalSummaryOutput, .session-reader #modalExplanationOutput { font-size: 1rem; }
+.session-reader #modalQuizOutput .quiz-question-card > p { font-size: 1rem; }
 
 :root,
 [data-theme="light"] {
@@ -98,22 +103,22 @@
     background: var(--surface-2);
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-semibold rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px];
+    @apply inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-semibold rounded-xl shadow-sm focus:outline-hidden focus:ring-2 focus:ring-offset-1 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px];
     background: var(--brand);
   }
   .btn-primary:hover { background: var(--brand-strong); }
   .btn-secondary {
-    @apply inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold rounded-xl border shadow-sm focus:outline-none transition min-h-[44px];
+    @apply inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold rounded-xl border shadow-sm focus:outline-hidden transition min-h-[44px];
     background: var(--surface);
     color: var(--text);
     border-color: var(--border);
   }
   .btn-accent {
-    @apply inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-semibold rounded-xl shadow-sm focus:outline-none transition min-h-[44px];
+    @apply inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-semibold rounded-xl shadow-sm focus:outline-hidden transition min-h-[44px];
     background: var(--accent);
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-red-400 transition min-h-[44px];
+    @apply inline-flex items-center justify-center px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl shadow-sm focus:outline-hidden focus:ring-2 focus:ring-red-400 transition min-h-[44px];
   }
   .icon-btn {
     @apply inline-flex md:hidden h-11 w-11 items-center justify-center rounded-xl border;
@@ -176,7 +181,7 @@
     @apply bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs sm:text-sm text-slate-700;
   }
   .file-chip-remove {
-    @apply ml-3 text-slate-600 hover:text-red-600 text-xl leading-none focus:outline-none;
+    @apply ml-3 text-slate-600 hover:text-red-600 text-xl leading-none focus:outline-hidden;
   }
   .empty-state {
     @apply text-center py-10 px-6 bg-white rounded-2xl border border-dashed border-slate-300;
@@ -322,7 +327,7 @@
   }
 
   .tab-link {
-    @apply py-3 px-2 sm:px-4 mx-1 sm:mx-2 font-medium border-b-2 border-transparent focus:outline-none whitespace-nowrap text-sm sm:text-base text-slate-500 hover:text-indigo-600 hover:border-indigo-500;
+    @apply py-3 px-2 sm:px-4 mx-1 sm:mx-2 font-medium border-b-2 border-transparent focus:outline-hidden whitespace-nowrap text-sm sm:text-base text-slate-500 hover:text-indigo-600 hover:border-indigo-500;
   }
   .tab-link[data-active="true"] {
     @apply text-indigo-600 border-indigo-600;
@@ -363,13 +368,13 @@
   }
   
   .flashcard-modal-nav-btn {
-    @apply px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400 transition disabled:opacity-60 disabled:cursor-not-allowed;
+    @apply px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-md focus:outline-hidden focus:ring-2 focus:ring-indigo-400 transition disabled:opacity-60 disabled:cursor-not-allowed;
   }
   .flashcard-modal-action-btn {
-     @apply px-3 py-1.5 text-white text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-opacity-75 transition duration-150;
+     @apply px-3 py-1.5 text-white text-xs font-medium rounded-md shadow-sm focus:outline-hidden focus:ring-2  transition duration-150;
   }
    .flashcard-modal-utility-btn {
-    @apply px-3 py-1.5 text-slate-600 bg-slate-200 hover:bg-slate-300 text-xs font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition duration-150;
+    @apply px-3 py-1.5 text-slate-600 bg-slate-200 hover:bg-slate-300 text-xs font-medium rounded-md shadow-sm focus:outline-hidden focus:ring-2 focus:ring-slate-400 transition duration-150;
   }
   .flashcard-progress-dot {
     @apply w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full transition-colors duration-300 cursor-pointer;
@@ -440,7 +445,7 @@
     @apply bg-yellow-50 border-yellow-300 text-yellow-700;
   }
   .quiz-nav-button {
-    @apply px-4 py-2 text-sm font-medium rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-opacity-75 transition duration-150;
+    @apply px-4 py-2 text-sm font-medium rounded-lg shadow-sm focus:outline-hidden focus:ring-2  transition duration-150;
   }
   .quiz-results-item {
     @apply p-3 mb-2 border-b border-slate-200 flex justify-between items-center;
@@ -448,7 +453,7 @@
 
 
   .confirm-modal-overlay {
-    @apply fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300;
+    @apply fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300;
   }
   .confirm-modal-overlay[data-visible="true"] {
     @apply opacity-100 pointer-events-auto;
@@ -690,3 +695,10 @@ body:has(#sessionDetailModal[data-visible="true"]) {
   overflow: hidden;
 }
 #modalQuizOutput { background: transparent !important; }
+
+@media print {
+  body { background: white !important; color: black !important; }
+  #printButton, body > p:has(a[href="/privacy.html"]), #printAnswers:not([open]) { display: none !important; }
+  [data-print-question] { break-inside: avoid; padding-bottom: 1rem; }
+  #printQuestions pre { white-space: pre-wrap; }
+}

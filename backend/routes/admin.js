@@ -6,6 +6,7 @@ const { setAdminCookie, clearAdminCookie } = require('../utils/cookies');
 const admin = require('../services/admin');
 
 const router = express.Router();
+router.get('/reliability',authenticateToken,requireAdminSession,async(req,res)=>{try{res.json(await require('../services/aiTelemetry').dashboard());}catch{res.status(503).json({message:'Reliability statistics are unavailable.'});}});
 
 const otpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -21,9 +22,13 @@ function handle(res, error) {
   res.status(status).json({ message: error.message || 'Admin request failed.' });
 }
 
-router.get('/status', authenticateToken, requireAdminRole, (req, res) => {
+router.get('/status', authenticateToken, requireAdminRole, async(req, res) => {
+  try {
   const decoded = admin.readAdminToken(require('../utils/cookies').getAdminTokenFromRequest(req));
-  res.json(admin.gateStatus(req.user, decoded));
+  const row=decoded?.sid===req.loginSession.sid?(await (await require('../services/localState').securityDB()).execute({sql:'SELECT admin_generation FROM AuthSessions WHERE id=?',args:[decoded.sid]})).rows[0]:null;
+  const valid=row&&Number(row.admin_generation)===Number(decoded.generation)&&Number(decoded.version)===Number(req.user.session_version||0);
+  res.json(admin.gateStatus(req.user, valid?decoded:null));
+  }catch{res.status(503).json({message:'Admin session verification is unavailable.'});}
 });
 
 router.post('/unlock/start', authenticateToken, requireAdminRole, otpLimiter, async (req, res) => {
@@ -44,7 +49,7 @@ router.post('/unlock/start', authenticateToken, requireAdminRole, otpLimiter, as
 
 router.post('/unlock/confirm', authenticateToken, requireAdminRole, otpLimiter, async (req, res) => {
   try {
-    const token = await admin.confirmUnlock(req.user, req.body && req.body.code, req.ip);
+    const token = await admin.confirmUnlock(req.user, req.body && req.body.code, req.ip,req.loginSession.sid);
     setAdminCookie(res, token);
     const decoded = admin.readAdminToken(token);
     res.json({
@@ -56,9 +61,12 @@ router.post('/unlock/confirm', authenticateToken, requireAdminRole, otpLimiter, 
   }
 });
 
-router.post('/lock', authenticateToken, requireAdminRole, (req, res) => {
+router.post('/lock', authenticateToken, requireAdminRole, async(req, res) => {
+  try {
+  await (await require('../services/localState').securityDB()).execute({sql:'UPDATE AuthSessions SET admin_generation=admin_generation+1 WHERE id=? AND user_id=?',args:[req.loginSession.sid,req.user.id]});
   clearAdminCookie(res);
   res.json({ message: 'Admin mode locked.' });
+  }catch{res.status(503).json({message:'Could not lock admin mode securely. Try again.'});}
 });
 
 router.post('/phone/start', authenticateToken, requireAdminSession, otpLimiter, async (req, res) => {
@@ -81,8 +89,9 @@ router.post('/phone/confirm', authenticateToken, requireAdminSession, otpLimiter
 
 router.get('/users', authenticateToken, requireAdminSession, async (req, res) => {
   try {
-    const users = await admin.listUsers({ q: req.query.q, limit: req.query.limit, offset: req.query.offset });
-    res.json({ users });
+    const offset=require('../utils/page').offset(req.query.offset);
+    const users = await admin.listUsers({ q: req.query.q, limit:25,offset });
+    res.json({ users:users.slice(0,24),nextOffset:users.length>24?offset+24:null });
   } catch (error) {
     handle(res, error);
   }
@@ -90,7 +99,7 @@ router.get('/users', authenticateToken, requireAdminSession, async (req, res) =>
 
 router.get('/users/:id', authenticateToken, requireAdminSession, async (req, res) => {
   try {
-    const detail = await admin.getUserDetail(req.params.id);
+    const detail = await admin.getUserDetail(req.params.id,req.query);
     res.json(detail);
   } catch (error) {
     handle(res, error);
@@ -205,8 +214,9 @@ router.post('/users/:id/quota', authenticateToken, requireAdminSession, async (r
 
 router.get('/quizzes', authenticateToken, requireAdminSession, async (req, res) => {
   try {
-    const quizzes = await admin.listQuizzes({ search: req.query.search || req.query.q });
-    res.json({ quizzes });
+    const offset=require('../utils/page').offset(req.query.offset);
+    const quizzes = await admin.listQuizzes({ search: req.query.search || req.query.q,limit:25,offset });
+    res.json({ quizzes:quizzes.slice(0,24),nextOffset:quizzes.length>24?offset+24:null });
   } catch (error) {
     handle(res, error);
   }

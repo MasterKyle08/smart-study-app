@@ -31,7 +31,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.use(require('cors')({ origin: true, credentials: true }));
+app.disable('x-powered-by');
+app.use(require('./middleware/browserSecurity'));
 app.use(cookieParser());
 // Reject abusive API traffic before allocating and parsing request bodies.
 app.use('/api/', rateLimitMiddleware);
@@ -55,6 +56,8 @@ app.use('/api/premade', premadeRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/account', require('./routes/account'));
+app.use('/api/library', require('./routes/library'));
 
 // Serve static files from the 'public' directory (MOVED DOWN - AFTER API routes and favicon)
 app.use(express.static(path.join(__dirname, '..', 'public')));

@@ -35,12 +35,13 @@ test.before(async () => {
 });
 test.after(async () => { await new Promise(resolve => server.close(resolve)); await database.close(); memoryAnchor.close(); });
 async function user(label = 'member') { return User.create(`${label}-${++serial}@example.test`, 'test-hash'); }
-function cookie(member, admin = false) {
-  const auth = jwt.sign({ userId: member.id }, process.env.JWT_SECRET);
-  return `ss_token=${auth}${admin ? '; ss_admin=' + jwt.sign({ typ: 'admin', userId: member.id }, process.env.JWT_SECRET) : ''}`;
+async function cookie(member, admin = false) {
+  const auth = await require('../services/loginSessions').issue(member);
+  const sid=(await require('../services/loginSessions').read(auth)).sid;
+  return `ss_token=${auth}${admin ? '; ss_admin=' + jwt.sign({ typ: 'admin', userId: member.id,version:Number(member.session_version||0),sid,generation:0 }, process.env.JWT_SECRET) : ''}`;
 }
 async function post(route, body, member, stepUp = false) {
-  return fetch(base + route, { method: 'POST', headers: { 'content-type': 'application/json', ...(member ? { cookie: cookie(member, stepUp) } : {}) }, body: JSON.stringify(body) });
+  return fetch(base + route, { method: 'POST', headers: { 'content-type': 'application/json', ...(member ? { cookie: await cookie(member, stepUp) } : {}) }, body: JSON.stringify(body) });
 }
 
 test('owner aliases are reserved; ordinary email variants cannot create duplicate identities or admin roles', async () => {
@@ -205,7 +206,7 @@ test('combined regeneration saves partial outputs without erasing existing mater
     return { summary: 'Updated summary', warnings: ['Quiz unavailable; saved quiz retained.'] };
   };
   try {
-    const response = await fetch(`${base}/api/study/sessions/${saved.id}/regenerate`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: cookie(member) }, body: JSON.stringify({ outputFormats: ['all'] }) });
+    const response = await fetch(`${base}/api/study/sessions/${saved.id}/regenerate`, { method: 'PUT', headers: { 'content-type': 'application/json', cookie: await cookie(member) }, body: JSON.stringify({ outputFormats: ['all'] }) });
     assert.equal(response.status, 200);
     const result = (await response.json()).updatedSession;
     assert.equal(calls, 1);

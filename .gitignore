@@ -11,6 +11,10 @@ oracle-upload.zip
 /.deploy/
 /.local/
 /public/vendor/pdfjs/
+/public/vendor/katex/
+/public/vendor/mammoth/
+/public/vendor/tesseract.js/
+/public/vendor/tesseract.js-core/
 /playwright-report/
 /test-results/
 *service-account*.json

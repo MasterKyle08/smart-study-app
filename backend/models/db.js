@@ -116,6 +116,7 @@ async function init() {
     await db.execute(createSessionsTableSQL);
     console.log('Sessions table checked/created.');
     await addColumnIfMissing('ALTER TABLE Sessions ADD COLUMN quiz_options TEXT', 'Sessions.quiz_options');
+    for (const [name, type] of [['folder', "TEXT DEFAULT ''"], ['tags', "TEXT DEFAULT '[]'"], ['citations', 'TEXT']]) await addColumnIfMissing(`ALTER TABLE Sessions ADD COLUMN ${name} ${type}`, `Sessions.${name}`);
 
     console.log('Executing: Create Session Update Trigger IF NOT EXISTS');
     await db.execute(createSessionUpdateTriggerSQL);
@@ -124,6 +125,7 @@ async function init() {
     console.log('Executing: Create PremadeQuizzes Table IF NOT EXISTS');
     await db.execute(createPremadeQuizzesTableSQL);
     console.log('PremadeQuizzes table checked/created.');
+    await addColumnIfMissing("ALTER TABLE PremadeQuizzes ADD COLUMN folder TEXT DEFAULT ''", 'PremadeQuizzes.folder');
 
     console.log('Executing: Create PremadeQuizzes Update Trigger IF NOT EXISTS');
     await db.execute(createPremadeQuizUpdateTriggerSQL);
@@ -140,6 +142,11 @@ async function init() {
     await addColumnIfMissing('ALTER TABLE Users ADD COLUMN ban_reason TEXT', 'Users.ban_reason');
     await addColumnIfMissing('ALTER TABLE Users ADD COLUMN phone TEXT', 'Users.phone');
     await addColumnIfMissing('ALTER TABLE Users ADD COLUMN phone_verified INTEGER DEFAULT 0', 'Users.phone_verified');
+    await addColumnIfMissing('ALTER TABLE Users ADD COLUMN session_version INTEGER DEFAULT 0', 'Users.session_version');
+    await db.execute(`CREATE TABLE IF NOT EXISTS AuthSessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, version INTEGER NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP, expires_at INTEGER NOT NULL, last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP, label TEXT, FOREIGN KEY(user_id) REFERENCES Users(id) ON DELETE CASCADE)`);
+    await db.execute('CREATE INDEX IF NOT EXISTS auth_sessions_user ON AuthSessions(user_id, expires_at)');
+    await addColumnIfMissing('ALTER TABLE AuthSessions ADD COLUMN admin_generation INTEGER DEFAULT 0', 'AuthSessions.admin_generation');
+    await db.execute(`CREATE TABLE IF NOT EXISTS AccountTokens (digest TEXT PRIMARY KEY, user_id INTEGER NOT NULL, purpose TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES Users(id) ON DELETE CASCADE)`);
 
     await db.execute(`CREATE TABLE IF NOT EXISTS AdminOtps (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,6 +232,7 @@ async function init() {
       FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
     );`);
     console.log('FlashcardReviews table checked/created.');
+    await addColumnIfMissing('ALTER TABLE FlashcardReviews ADD COLUMN definition TEXT', 'FlashcardReviews.definition');
     await checkReviewConflicts();
     for (const sql of [
       'CREATE INDEX IF NOT EXISTS sessions_user_created ON Sessions (user_id, id DESC)',
@@ -245,6 +253,17 @@ async function init() {
     )`);
     await db.execute('CREATE INDEX IF NOT EXISTS billing_subscription_user ON BillingSubscriptions (user_id, entitled)');
     await db.execute('CREATE TABLE IF NOT EXISTS BillingEvents (id TEXT PRIMARY KEY, created INTEGER NOT NULL, processed_at TEXT DEFAULT CURRENT_TIMESTAMP)');
+    await addColumnIfMissing('ALTER TABLE BillingCheckouts ADD COLUMN expires_at INTEGER DEFAULT 0', 'BillingCheckouts.expires_at');
+    await addColumnIfMissing("ALTER TABLE BillingCheckouts ADD COLUMN state TEXT DEFAULT 'open'", 'BillingCheckouts.state');
+    await db.execute('CREATE TABLE IF NOT EXISTS BillingLocks (resource TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL)');
+    await db.execute('CREATE TABLE IF NOT EXISTS AiMinuteReservations (id TEXT PRIMARY KEY, pool TEXT NOT NULL, model TEXT NOT NULL, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL)');
+    await db.execute('CREATE INDEX IF NOT EXISTS ai_minute_model ON AiMinuteReservations(pool, model, created_at)');
+    await db.execute('CREATE TABLE IF NOT EXISTS AiMonthlySpend (month TEXT NOT NULL, user_key TEXT NOT NULL, reserved_microusd INTEGER DEFAULT 0, PRIMARY KEY(month,user_key))');
+    await db.execute('CREATE TABLE IF NOT EXISTS AiRequestEvents (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT, outcome TEXT NOT NULL, status TEXT, elapsed_ms INTEGER, queue_ms INTEGER, provider_ms INTEGER, input_tokens INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)');
+    await db.execute('CREATE INDEX IF NOT EXISTS ai_events_created ON AiRequestEvents(created_at)');
+    await db.execute("DELETE FROM AiRequestEvents WHERE created_at<datetime('now','-30 days')");
+    await db.execute({sql:'DELETE FROM AuthSessions WHERE expires_at<?',args:[Date.now()]});
+    await db.execute({sql:'DELETE FROM AccountTokens WHERE expires_at<?',args:[Date.now()]});
     
     console.log('Database schema initialization statements executed with Turso.');
   } catch (error) {

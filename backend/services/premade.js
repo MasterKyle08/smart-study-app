@@ -84,6 +84,7 @@ async function createPremadeQuiz({
   }
 
   const aiQuiz = await aiService.generateQuizWithOptions(promptContext, normalizedOptions, { premium });
+  require('../utils/citations').attach(promptContext,{quiz:aiQuiz});
   if (!Array.isArray(aiQuiz) || aiQuiz.length === 0) {
     const error = new Error('AI did not return any quiz questions.');
     error.statusCode = 500;
@@ -110,8 +111,8 @@ async function createPremadeQuiz({
   };
 }
 
-async function listPremadeQuizzes({ search } = {}) {
-  const quizzes = await PremadeQuiz.listPublic({ search });
+async function listPremadeQuizzes(options = {}) {
+  const quizzes = await PremadeQuiz.listPublic(options);
   return quizzes.map(quiz => {
     const { quiz: _quizData, sourceText: _source, ...rest } = quiz;
     return {
@@ -132,8 +133,8 @@ async function getPremadeQuiz(slug, { userId } = {}) {
   return result;
 }
 
-async function listMine(userId) {
-  const quizzes = await PremadeQuiz.listByUserId(userId);
+async function listMine(userId,options) {
+  const quizzes = await PremadeQuiz.listByUserId(userId,options);
   return quizzes.map((quiz) => ({ ...quiz, quizUrl: `/quiz/${quiz.slug}` }));
 }
 

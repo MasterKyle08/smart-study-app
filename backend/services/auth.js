@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { normalizeEmail, reservedEmail } = require('../utils/identity');
+const loginSessions = require('./loginSessions');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
@@ -72,7 +73,7 @@ async function registerUser(email, password) {
   const newUser = await User.create(email, passwordHash);
 
   const safeUser = publicUser(newUser);
-  const token = jwt.sign({ userId: safeUser.id, email: safeUser.email, plan: safeUser.plan }, JWT_SECRET, { expiresIn: '7d' });
+  const token = await loginSessions.issue(newUser);
 
   return {
     user: safeUser,
@@ -115,7 +116,7 @@ async function loginUser(email, password) {
   }
 
   const safeUser = publicUser(user);
-  const token = jwt.sign({ userId: safeUser.id, email: safeUser.email, plan: safeUser.plan }, JWT_SECRET, { expiresIn: '7d' });
+  const token = await loginSessions.issue(user);
 
   return {
     user: safeUser,

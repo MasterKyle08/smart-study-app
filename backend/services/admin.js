@@ -72,9 +72,9 @@ async function verifyPassword(user, password) {
   if (!ok) throw httpError('Password is incorrect.', 401);
 }
 
-function signAdminToken(user) {
+function signAdminToken(user,session={}) {
   return jwt.sign(
-    { typ: 'admin', userId: Number(user.id), email: user.email },
+    { typ: 'admin', userId: Number(user.id), version: Number(user.session_version || 0), sid:session.id,generation:session.generation },
     JWT_SECRET,
     { expiresIn: Math.floor(adminSessionMs() / 1000) }
   );
@@ -83,7 +83,7 @@ function signAdminToken(user) {
 function readAdminToken(token) {
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms:['HS256'] });
     if (decoded.typ !== 'admin') return null;
     return decoded;
   } catch (_err) {
@@ -124,11 +124,13 @@ async function startUnlock(user, ip) {
   return issued;
 }
 
-async function confirmUnlock(user, code, ip) {
+async function confirmUnlock(user, code, ip,sessionId) {
   if (!isAdminUser(user)) throw httpError('Admin access required.', 403);
   await otp.verify({ user, purpose: 'admin_unlock', code });
   await writeAudit({ actor: user, action: 'admin_unlocked', targetType: 'admin', targetId: user.id, targetEmail: user.email, ip });
-  return signAdminToken(user);
+  const updated=await (await require('./localState').securityDB()).execute({sql:'UPDATE AuthSessions SET admin_generation=admin_generation+1 WHERE id=? AND user_id=? RETURNING admin_generation',args:[sessionId,user.id]});
+  if(!updated.rows.length)throw httpError('Sign in again before unlocking admin.',401);
+  return signAdminToken(user,{id:sessionId,generation:Number(updated.rows[0].admin_generation)});
 }
 
 async function startPhoneChange(user, rawPhone, ip) {
@@ -161,14 +163,16 @@ async function listUsers({ q, limit, offset }) {
   return (await User.search({ q, limit, offset })).map(publicAdminUser);
 }
 
-async function getUserDetail(userId) {
+async function getUserDetail(userId,query={}) {
   const user = await User.findById(userId);
   if (!user) throw httpError('User not found.', 404);
-  const sessions = await Session.findByUserId(user.id);
+  const page=await Session.listSummaries(user.id,require('../utils/page').page(query));
+  const sessions=page.sessions;
   const quizzes = await PremadeQuiz.listByUserId(user.id);
   const usageSnap = await usage.snapshot({ user, premium: user.plan === 'premium' });
   return {
     user: publicAdminUser(user),
+    nextCursor:page.nextCursor,
     usage: usageSnap,
     quizzes,
     sessions: sessions.map((session) => ({
@@ -287,15 +291,9 @@ async function deleteUserAccount({ actor, targetId, password, confirm, ip }) {
   if (String(confirm || '').trim().toLowerCase() !== String(target.email).toLowerCase()) {
     throw httpError('Type the user’s email to confirm account deletion.', 400);
   }
-  const sessions = await Session.deleteByUserId(target.id);
-  const reviews = await FlashcardReview.deleteByUserId(target.id);
-  const quizzes = await PremadeQuiz.deleteByUserId(target.id);
-  await db.execute({
-    sql: 'DELETE FROM AiUsageDaily WHERE user_key = ?',
-    args: [`user:${Number(target.id)}`],
-  });
-  await db.execute({ sql: 'DELETE FROM AdminOtps WHERE user_id = ?', args: [target.id] });
-  await User.deleteById(target.id);
+  const counts=(await db.execute({sql:'SELECT (SELECT COUNT(*) FROM Sessions WHERE user_id=?) AS sessions,(SELECT COUNT(*) FROM FlashcardReviews WHERE user_id=?) AS reviews,(SELECT COUNT(*) FROM PremadeQuizzes WHERE user_id=?) AS quizzes',args:[target.id,target.id,target.id]})).rows[0];
+  await require('./billing').cancelUserSubscriptions(target.id,assertLock=>require('./account').eraseData(target.id,assertLock));
+  const sessions=Number(counts.sessions),reviews=Number(counts.reviews),quizzes=Number(counts.quizzes);
   await writeAudit({
     actor,
     action: 'user_deleted',
@@ -325,8 +323,8 @@ async function resetQuota({ actor, targetId, password, extraJobs, ip }) {
   return snap;
 }
 
-async function listQuizzes({ search }) {
-  return PremadeQuiz.listAll({ search, limit: 80 });
+async function listQuizzes({ search,limit=24,offset=0 }) {
+  return PremadeQuiz.listAll({ search,limit,offset });
 }
 
 async function deleteQuiz({ actor, slug, password, confirm, ip }) {

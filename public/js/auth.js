@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (response.user) {
                 localStorage.removeItem('authToken');
+                window.StudyState?.clearPrivateStorage();
                 localStorage.setItem('userEmail', response.user.email);
                 localStorage.setItem('userPlan', response.user.plan || 'free');
                 localStorage.setItem('userIsAdmin', response.user.isAdmin ? '1' : '0');
@@ -117,7 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function handleLogout() {
-        try { if (typeof apiLogout === 'function') await apiLogout(); } catch (_err) { /* ignore */ }
+        try { if (typeof apiLogout === 'function') await apiLogout(); } catch (error) { showMessage('authFormMessage', error.message, 'error'); return; }
+        window.StudyState.clearPrivateStorage();
         localStorage.removeItem('authToken');
         localStorage.removeItem('userEmail');
         localStorage.removeItem('userPlan');
@@ -152,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateNav(true, user.email, user.plan || 'free', Boolean(user.isAdmin));
             if (typeof window.refreshUsageMeter === 'function') window.refreshUsageMeter();
         } catch (_error) {
+            window.StudyState?.clearPrivateStorage();
             localStorage.removeItem('authToken');
             localStorage.removeItem('userEmail');
             localStorage.removeItem('userPlan');

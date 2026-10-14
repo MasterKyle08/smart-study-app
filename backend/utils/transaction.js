@@ -1,15 +1,20 @@
-const { db } = require('../models/db');
+const { db } = require("../models/db");
 
-let writes = Promise.resolve();
+const writes = new WeakMap();
 
-function writeTransaction(fn) {
-  const operation = writes.then(() => executeWrite(fn));
-  writes = operation.catch(() => {});
+function writeTransaction(fn, client = db) {
+  const operation = (writes.get(client) || Promise.resolve()).then(() =>
+    executeWrite(fn, client),
+  );
+  writes.set(
+    client,
+    operation.catch(() => {}),
+  );
   return operation;
 }
 
-async function executeWrite(fn) {
-  const tx = await db.transaction('write');
+async function executeWrite(fn, client) {
+  const tx = await client.transaction("write");
   try {
     const result = await fn(tx);
     await tx.commit();

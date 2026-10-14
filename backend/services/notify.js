@@ -26,6 +26,7 @@ async function sendSms(to, body) {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
+    signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) {
     const text = await response.text();
@@ -43,6 +44,7 @@ async function sendSmtp({ to, subject, text }) {
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === '1',
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    connectionTimeout:15000, greetingTimeout:15000, socketTimeout:20000,
   });
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -70,6 +72,7 @@ async function sendEmail({ to, subject, text }) {
         subject,
         text,
       }),
+      signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) {
       const body = await response.text();

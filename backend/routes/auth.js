@@ -83,9 +83,12 @@ router.get('/me', authenticateToken, (req, res) => {
   });
 });
 
-router.post('/logout', (req, res) => {
-  clearAuthCookie(res);
-  res.status(200).json({ message: 'Signed out.' });
+router.post('/logout', async (req, res) => {
+  try {
+    await require('../services/loginSessions').revoke(require('../utils/cookies').getTokenFromRequest(req));
+    clearAuthCookie(res);
+    res.status(200).json({ message: 'Signed out.' });
+  } catch { res.status(503).json({ message: 'Could not sign out securely. Try again.' }); }
 });
 
 module.exports = router;

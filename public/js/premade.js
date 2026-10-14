@@ -2,6 +2,7 @@ let premadeQuizzesCache = [];
 let selectedPremadeQuiz = null;
 let isViewingQuizDetail = false;
 let myQuizSlugs = new Set();
+let publicCursor=null,privateCursor=null;
 
 const domRefs = {
     listContainer: document.getElementById('premadeListContainer'),
@@ -188,7 +189,7 @@ function startSelectedPremadeQuiz() {
         numQuestions: 'ai_choice',
         difficulty: 'medium',
     };
-    window.currentQuizTextContext = selectedPremadeQuiz.topic || selectedPremadeQuiz.description || '';
+    window.currentQuizTextContext = window.StudyState.reference(selectedPremadeQuiz);
     window.currentExtractedTextForQuiz = selectedPremadeQuiz.sourceText || window.currentQuizTextContext || '';
 
     renderQuizInterface();
@@ -222,7 +223,7 @@ window.generatePersonalizedQuizFromPremade = async function() {
 
     const numQuestions = document.getElementById('premadePersonalNumQuestions')?.value || 'ai_choice';
     const difficulty = document.getElementById('premadePersonalDifficulty')?.value || 'medium';
-    const referenceText = (selectedPremadeQuiz.sourceText || selectedPremadeQuiz.description || selectedPremadeQuiz.topic || '').trim();
+    const referenceText = window.StudyState.reference(selectedPremadeQuiz).trim();
 
     if (!referenceText) {
         showMessage(statusElementId, 'This premade quiz is missing detailed reference material. Try another quiz or add your own context.', 'error', 6000);
@@ -278,15 +279,17 @@ window.generatePersonalizedQuizFromPremade = async function() {
     }
 };
 
-async function loadPremadeList(searchTerm) {
+async function loadPremadeList(searchTerm,append=false) {
     try {
         const [response, mine] = await Promise.all([
-            apiListPremadeQuizzes(searchTerm),
-            isUserLoggedIn() ? apiListMyPremadeQuizzes() : Promise.resolve({ quizzes: [] }),
+            append&&!publicCursor?Promise.resolve({quizzes:[]}):apiListPremadeQuizzes(searchTerm,append?publicCursor:null),
+            isUserLoggedIn() && (!append||privateCursor) ? apiListMyPremadeQuizzes(append?privateCursor:null) : Promise.resolve({ quizzes: [] }),
         ]);
         const own = (mine.quizzes || []).filter(quiz => !searchTerm || `${quiz.title} ${quiz.description || ''}`.toLowerCase().includes(searchTerm.toLowerCase()));
         (mine.quizzes || []).forEach(quiz => myQuizSlugs.add(quiz.slug));
-        premadeQuizzesCache = [...new Map([...(response.quizzes || []), ...own].map(quiz => [quiz.slug, quiz])).values()];
+        publicCursor=response.nextCursor||null;privateCursor=mine.nextCursor||null;
+        premadeQuizzesCache = [...new Map([...(append?premadeQuizzesCache:[]),...(response.quizzes || []), ...own].map(quiz => [quiz.slug, quiz])).values()];
+        let more=document.getElementById('premadeMore');if(!more){more=document.createElement('button');more.id='premadeMore';more.className='btn-secondary mt-3';more.textContent='Load more quizzes';domRefs.listContainer?.after(more);}more.classList.toggle('hidden',!publicCursor&&!privateCursor);more.onclick=()=>loadPremadeList(searchTerm,true);
         renderPremadeList(premadeQuizzesCache, selectedPremadeQuiz?.slug);
     } catch (error) {
         console.error('Failed to load premade quizzes:', error);

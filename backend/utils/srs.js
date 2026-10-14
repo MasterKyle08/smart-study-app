@@ -21,7 +21,7 @@ function reviewCard(state = {}, quality = 4, now = new Date()) {
   easeFactor = easeFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
   if (easeFactor < 1.3) easeFactor = 1.3;
 
-  const due = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+  const due = new Date(now.getTime() + (q < 3 ? 10 * 60 * 1000 : intervalDays * 24 * 60 * 60 * 1000));
   return {
     repetitions,
     intervalDays,
